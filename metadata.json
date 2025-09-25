@@ -1,0 +1,5 @@
+{
+  "name": "SOP Automation Analyzer",
+  "description": "An expert agent that analyzes pharmaceutical SOP documents to identify automation opportunities, enhance efficiency, and ensure regulatory compliance using AI.",
+  "requestFramePermissions": []
+}

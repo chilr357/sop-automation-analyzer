@@ -1,0 +1,26 @@
+{
+  "name": "sop-automation-analyzer-desktop",
+  "productName": "SOP Automation Analyzer",
+  "version": "0.1.0",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "cross-env NODE_ENV=development electron-forge start",
+    "package": "cross-env NODE_ENV=production electron-forge package",
+    "make": "cross-env NODE_ENV=production electron-forge make",
+    "copy-assets": "node scripts/copy-assets.js"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.0",
+    "fs-extra": "^11.2.0"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.9.0",
+    "@electron-forge/maker-dmg": "^7.9.0",
+    "@electron-forge/maker-squirrel": "^7.9.0",
+    "@electron-forge/maker-zip": "^7.9.0",
+    "@electron/notarize": "^3.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^30.0.8"
+  }
+}
