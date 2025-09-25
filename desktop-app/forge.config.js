@@ -38,8 +38,8 @@ const osxNotarize = enableMacNotarize
 
 module.exports = {
   packagerConfig: {
-    name: "SOP Automation Analyzer",
-    executableName: "SOPAutomationAnalyzer",
+    name: "Digital Process Automation Analyzer",
+    executableName: "DigitalProcessAutomationAnalyzer",
     icon: "./assets/icon",
     asar: true,
     appBundleId: "com.l-bax.sop-automation",
@@ -51,7 +51,7 @@ module.exports = {
     {
       name: "@electron-forge/maker-squirrel",
       config: {
-        name: "SOPAutomationAnalyzer",
+        name: "DigitalProcessAutomationAnalyzer",
         setupIcon: "./assets/icon.ico",
         loadingGif: "./assets/loading.gif",
         noMsi: true

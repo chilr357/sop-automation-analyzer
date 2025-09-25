@@ -1,10 +1,10 @@
-## SOP Automation Analyzer – Technical Architecture (Updated)
+## Digital Process Automation Analyzer – Technical Architecture (Updated)
 
 Version: 2.0  
 Date: September 25, 2025
 
 ### Executive Summary
-SOP Automation Analyzer is now a desktop application built with Electron that embeds a React 19 + TypeScript SPA for analyzing SOP PDFs using Google Gemini (gemini-2.5-flash via `@google/genai`). The React app is bundled by Vite and loaded locally by Electron. Packaging, signing, and notarization produce a notarized, universal macOS app and DMG for distribution.
+Digital Process Automation Analyzer is now a desktop application built with Electron that embeds a React 19 + TypeScript SPA for analyzing SOP PDFs using Google Gemini (gemini-2.5-flash via `@google/genai`). The React app is bundled by Vite and loaded locally by Electron. Packaging, signing, and notarization produce a notarized, universal macOS app and DMG for distribution.
 
 ### Core Stack
 - UI: React 19, TypeScript, Tailwind CSS (CDN)

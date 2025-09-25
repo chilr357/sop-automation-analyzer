@@ -24,7 +24,7 @@ const createWindow = () => {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    title: 'SOP Automation Analyzer',
+    title: 'Digital Process Automation Analyzer',
     show: false,
     icon: path.join(__dirname, '..', 'assets', 'icon.ico'),
     autoHideMenuBar: true,
@@ -59,7 +59,7 @@ const createWindow = () => {
       defaultId: 1,
       cancelId: 0,
       title: 'Confirm Exit',
-      message: 'Are you sure you want to exit the SOP Automation Analyzer?'
+      message: 'Are you sure you want to exit the Digital Process Automation Analyzer?'
     });
 
     if (choice === 1) {

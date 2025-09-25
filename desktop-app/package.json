@@ -1,6 +1,6 @@
 {
   "name": "sop-automation-analyzer-desktop",
-  "productName": "SOP Automation Analyzer",
+  "productName": "Digital Process Automation Analyzer",
   "version": "0.1.0",
   "main": "src/main.js",
   "private": true,

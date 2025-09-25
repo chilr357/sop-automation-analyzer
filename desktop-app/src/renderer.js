@@ -36,7 +36,7 @@ const init = async () => {
       iframe.src = startUrl;
     }
   } catch (error) {
-    console.error('Failed to load SOP Automation Analyzer web app', error);
+    console.error('Failed to load Digital Process Automation Analyzer web app', error);
     const errorBanner = document.getElementById('error-banner');
     if (errorBanner) {
       errorBanner.textContent = 'Unable to load the web application. Please ensure the build assets are available.';

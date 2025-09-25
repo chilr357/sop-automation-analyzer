@@ -50,7 +50,7 @@ const App: React.FC = () => {
   const Header: React.FC = () => (
     <header className="text-center p-8">
       <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl md:text-6xl">
-        SOP <span className="text-brand-blue">Automation Analyzer</span>
+        Digital Process <span className="text-brand-blue">Automation Analyzer</span>
       </h1>
       <p className="mt-3 max-w-md mx-auto text-base text-brand-gray sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
         Leverage AI to analyze your Standard Operating Procedures, identify automation opportunities, and enhance operational efficiency.
