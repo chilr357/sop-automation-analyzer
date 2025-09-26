@@ -1,6 +1,6 @@
-# SOP Automation Analyzer Desktop Wrapper
+# Digital Process Automation Analyzer Desktop Wrapper
 
-This directory contains an Electron Forge configuration that packages the SOP Automation Analyzer web application as a Windows desktop executable.
+This directory contains an Electron Forge configuration that packages the Digital Process Automation Analyzer web application as a Windows desktop executable.
 
 ## Prerequisites
 
