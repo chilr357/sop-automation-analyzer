@@ -12,7 +12,9 @@
   },
   "dependencies": {
     "electron-squirrel-startup": "^1.0.0",
-    "fs-extra": "^11.2.0"
+    "fs-extra": "^11.2.0",
+    "pdfjs-dist": "^4.10.38",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.9.0",

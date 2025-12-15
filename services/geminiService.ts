@@ -3,11 +3,13 @@ import { GoogleGenAI } from "@google/genai";
 import { SYSTEM_PROMPT, RESPONSE_SCHEMA } from '../constants';
 import type { AnalysisReport } from '../types';
 
-if (!process.env.API_KEY) {
-  throw new Error("API_KEY environment variable not set");
-}
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const getApiKey = () => {
+  const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing API key. Set GEMINI_API_KEY (preferred) or API_KEY.");
+  }
+  return apiKey;
+};
 
 const fileToGenerativePart = (base64Data: string, mimeType: string) => {
   return {
@@ -19,6 +21,7 @@ const fileToGenerativePart = (base64Data: string, mimeType: string) => {
 };
 
 export const analyzeSOP = async (file: File): Promise<AnalysisReport> => {
+  const ai = new GoogleGenAI({ apiKey: getApiKey() });
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);

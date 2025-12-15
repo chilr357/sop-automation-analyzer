@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { FileUpload } from './components/FileUpload';
+import { DesktopFilePicker, type DesktopPickedFile } from './components/DesktopFilePicker';
 import { ResultsDisplay } from './components/ResultsDisplay';
 import { AlertTriangleIcon } from './components/IconComponents';
 import { analyzeSOP } from './services/geminiService';
@@ -12,13 +13,22 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errors, setErrors] = useState<{ fileName: string; message: string }[]>([]);
 
+  const clearPreviousReports = useCallback(() => {
+    setAnalysisReports((previousReports) => {
+      previousReports.forEach((report) => {
+        // Only blob: URLs should be revoked.
+        if (report.fileUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(report.fileUrl);
+        }
+      });
+      return [];
+    });
+  }, []);
+
   const handleAnalyze = useCallback(async (files: File[]) => {
     setIsLoading(true);
     setErrors([]);
-    setAnalysisReports(previousReports => {
-      previousReports.forEach(report => URL.revokeObjectURL(report.fileUrl));
-      return [];
-    });
+    clearPreviousReports();
 
     const results = await Promise.allSettled(files.map(file => analyzeSOP(file)));
 
@@ -39,11 +49,54 @@ const App: React.FC = () => {
     setAnalysisReports(newReports);
     setErrors(newErrors);
     setIsLoading(false);
-  }, []);
+  }, [clearPreviousReports]);
+
+  const handleAnalyzeDesktop = useCallback(async (files: DesktopPickedFile[]) => {
+    setIsLoading(true);
+    setErrors([]);
+    clearPreviousReports();
+
+    try {
+      const api = window.desktopAPI;
+      if (!api?.analyzePdfPaths) {
+        throw new Error('Offline analysis API is unavailable.');
+      }
+
+      const filePaths = files.map((f) => f.path);
+      const results = await api.analyzePdfPaths(filePaths);
+
+      const newReports: AnalysisEntry[] = [];
+      const newErrors: { fileName: string; message: string }[] = [];
+
+      results.forEach((result) => {
+        const f = files.find((x) => x.path === result.filePath);
+        const fileName = f?.name ?? result.filePath;
+        const fileUrl = f?.url ?? result.filePath;
+
+        if (result.ok) {
+          newReports.push({ fileName, fileUrl, report: result.report });
+        } else {
+          newErrors.push({ fileName, message: result.error });
+        }
+      });
+
+      setAnalysisReports(newReports);
+      setErrors(newErrors);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Offline analysis failed.';
+      setErrors([{ fileName: 'Offline Analysis', message: msg }]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clearPreviousReports]);
 
   React.useEffect(() => {
     return () => {
-      analysisReports.forEach(report => URL.revokeObjectURL(report.fileUrl));
+      analysisReports.forEach((report) => {
+        if (report.fileUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(report.fileUrl);
+        }
+      });
     };
   }, [analysisReports]);
 
@@ -86,7 +139,11 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-brand-dark px-4 pb-20">
       <main className="container mx-auto">
         <Header />
-        <FileUpload onAnalyze={handleAnalyze} isLoading={isLoading} />
+        {window.desktopAPI?.pickPdfFiles ? (
+          <DesktopFilePicker onAnalyzePaths={handleAnalyzeDesktop} isLoading={isLoading} />
+        ) : (
+          <FileUpload onAnalyze={handleAnalyze} isLoading={isLoading} />
+        )}
         {isLoading && <LoadingIndicator />}
         {errors.length > 0 && <ErrorDisplay errors={errors} />}
         {analysisReports.length > 0 && <ResultsDisplay reports={analysisReports} />}

@@ -1,0 +1,100 @@
+import React, { useCallback, useState } from 'react';
+import { DocumentIcon, XIcon } from './IconComponents';
+
+export type DesktopPickedFile = { path: string; name: string; url: string };
+
+interface DesktopFilePickerProps {
+  isLoading: boolean;
+  onAnalyzePaths: (files: DesktopPickedFile[]) => void;
+}
+
+export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading, onAnalyzePaths }) => {
+  const [selectedFiles, setSelectedFiles] = useState<DesktopPickedFile[]>([]);
+  const [pickError, setPickError] = useState<string | null>(null);
+
+  const handlePick = useCallback(async () => {
+    setPickError(null);
+    try {
+      const api = window.desktopAPI;
+      if (!api?.pickPdfFiles) {
+        throw new Error('Desktop file picker is unavailable.');
+      }
+      const files = await api.pickPdfFiles();
+      setSelectedFiles(files);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to pick files.';
+      setPickError(msg);
+    }
+  }, []);
+
+  const handleAnalyzeClick = () => {
+    if (selectedFiles.length > 0) {
+      onAnalyzePaths(selectedFiles);
+    }
+  };
+
+  const handleRemoveFile = (indexToRemove: number) => {
+    setSelectedFiles((prev) => prev.filter((_, index) => index !== indexToRemove));
+  };
+
+  return (
+    <div className="w-full max-w-2xl mx-auto p-6 bg-brand-light border border-brand-border rounded-lg shadow-lg">
+      <div className="space-y-3">
+        <p className="text-sm text-brand-gray">
+          Desktop mode: pick PDFs from your computer. (Offline analysis requires the local model + llama binaries.)
+        </p>
+
+        <button
+          type="button"
+          onClick={handlePick}
+          disabled={isLoading}
+          className="w-full bg-gray-700 text-white font-semibold py-3 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+        >
+          Select PDF Document(s)
+        </button>
+
+        {pickError && (
+          <div className="p-3 rounded-md border border-red-500/30 bg-red-500/10 text-sm text-red-300">
+            {pickError}
+          </div>
+        )}
+      </div>
+
+      {selectedFiles.length > 0 && (
+        <div className="mt-6 space-y-2">
+          <h3 className="text-sm font-semibold text-brand-gray">Selected Files:</h3>
+          <ul className="max-h-40 overflow-y-auto space-y-2 rounded-md border border-brand-border p-2 bg-gray-800/50">
+            {selectedFiles.map((file, index) => (
+              <li key={file.path} className="flex items-center justify-between bg-brand-dark p-2 rounded">
+                <div className="flex items-center space-x-2 truncate">
+                  <DocumentIcon className="w-5 h-5 text-brand-blue flex-shrink-0" />
+                  <span className="text-sm truncate" title={file.name}>
+                    {file.name}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveFile(index)}
+                  className="p-1 rounded-full hover:bg-gray-700 transition-colors"
+                  aria-label={`Remove ${file.name}`}
+                >
+                  <XIcon className="w-4 h-4 text-brand-gray" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <button
+        onClick={handleAnalyzeClick}
+        disabled={selectedFiles.length === 0 || isLoading}
+        className="mt-6 w-full bg-brand-blue text-white font-bold py-3 px-4 rounded-md hover:bg-blue-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center"
+      >
+        {isLoading ? 'Analyzing...' : `Analyze ${selectedFiles.length} Document(s)`}
+      </button>
+    </div>
+  );
+};
+
+

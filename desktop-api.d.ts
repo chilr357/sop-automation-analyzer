@@ -1,0 +1,22 @@
+import type { AnalysisReport } from './types';
+
+export {};
+
+declare global {
+  interface Window {
+    desktopAPI?: {
+      getAppInfo: () => Promise<{ name: string; version: string }>;
+      getStartUrl: () => Promise<string>;
+      openExternal: (url: string) => void;
+
+      // Offline desktop additions
+      pickPdfFiles: () => Promise<Array<{ path: string; name: string; url: string }>>;
+      analyzePdfPaths: (
+        filePaths: string[]
+      ) => Promise<Array<{ ok: true; filePath: string; report: AnalysisReport } | { ok: false; filePath: string; error: string }>>;
+      pathToFileUrl: (filePath: string) => Promise<string | null>;
+    };
+  }
+}
+
+

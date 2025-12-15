@@ -164,3 +164,9 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Offline desktop resources (do not commit large models/binaries)
+desktop-app/resources/models/*.gguf
+desktop-app/resources/llama/**
+!desktop-app/resources/llama/**/.gitkeep
+!desktop-app/resources/models/.gitkeep

@@ -44,6 +44,11 @@ module.exports = {
     asar: true,
     appBundleId: "com.l-bax.sop-automation",
     appCategoryType: "public.app-category.productivity",
+    // Ensure offline resources (models/binaries) are included alongside the packaged app.
+    // The folder is gitignored (large files), but Forge will package whatever is present.
+    extraResource: [
+      "./resources"
+    ],
     osxSign,
     osxNotarize
   },
