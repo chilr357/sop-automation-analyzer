@@ -2,6 +2,7 @@ const path = require('path');
 
 const enableMacNotarize = process.env.MAC_NOTARIZE === 'true';
 const enableMacSign = process.env.MAC_SIGN === 'true' || enableMacNotarize;
+const enableWindowsInstaller = process.env.WIN_INSTALLER === 'true';
 
 const entitlementsFile = path.resolve(__dirname, 'entitlements/entitlements.mac.plist');
 const entitlementsInheritFile = path.resolve(__dirname, 'entitlements/entitlements.mac.inherit.plist');
@@ -53,15 +54,19 @@ module.exports = {
     osxNotarize
   },
   makers: [
-    {
-      name: "@electron-forge/maker-squirrel",
-      config: {
-        name: "DigitalProcessAutomationAnalyzer",
-        setupIcon: "./assets/icon.ico",
-        loadingGif: "./assets/loading.gif",
-        noMsi: true
-      }
-    },
+    ...(enableWindowsInstaller
+      ? [
+          {
+            name: "@electron-forge/maker-squirrel",
+            config: {
+              name: "DigitalProcessAutomationAnalyzer",
+              setupIcon: "./assets/icon.ico",
+              loadingGif: "./assets/loading.gif",
+              noMsi: true
+            }
+          }
+        ]
+      : []),
     {
       name: "@electron-forge/maker-zip",
       platforms: ["win32"]

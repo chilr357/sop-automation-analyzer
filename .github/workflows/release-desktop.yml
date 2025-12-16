@@ -21,7 +21,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        # Build macOS on both Apple Silicon and Intel runners for broad compatibility.
+        os: [macos-latest, macos-13, windows-latest]
 
     steps:
       - name: Checkout
@@ -50,20 +51,22 @@ jobs:
         working-directory: desktop-app
         run: npm run copy-assets
 
-      - name: Make desktop distributables (macOS universal)
+      - name: Make desktop distributables (macOS)
         if: runner.os == 'macOS'
         working-directory: desktop-app
         env:
           NODE_ENV: production
           MAC_SIGN: "false"
           MAC_NOTARIZE: "false"
-        run: npm run make -- --arch=universal
+        run: npm run make
 
       - name: Make desktop distributables (Windows)
         if: runner.os == 'Windows'
         working-directory: desktop-app
         env:
           NODE_ENV: production
+          # Disable Squirrel installer in CI (requires icon assets); ship ZIP instead.
+          WIN_INSTALLER: "false"
         run: npm run make
 
       - name: Upload workflow artifacts (always)
