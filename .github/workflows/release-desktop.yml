@@ -10,6 +10,8 @@ on:
   push:
     tags:
       - "v*"
+    branches-ignore:
+      - "**"
 
 permissions:
   contents: write
@@ -21,10 +23,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Build macOS on both Apple Silicon and Intel runners for broad compatibility.
-        # macos-13 is retired. Use macos-latest plus a "large" Intel runner.
-        # (GitHub's intel runner label is typically `macos-14-large`.)
-        os: [macos-latest, macos-14-large, windows-latest]
+        # Keep runner labels conservative for reliability.
+        os: [macos-latest, windows-latest]
 
     env:
       # Reduce Electron binary download flakiness in CI by caching and using a mirror.
