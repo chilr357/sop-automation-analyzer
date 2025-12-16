@@ -22,7 +22,13 @@ jobs:
       fail-fast: false
       matrix:
         # Build macOS on both Apple Silicon and Intel runners for broad compatibility.
-        os: [macos-latest, macos-13, windows-latest]
+        # macos-13 is retired; use macos-latest (arm64) + macos-15-intel (x64).
+        os: [macos-latest, macos-15-intel, windows-latest]
+
+    env:
+      # Reduce Electron binary download flakiness in CI by caching and using a mirror.
+      ELECTRON_CACHE: ${{ runner.temp }}/electron-cache
+      ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
 
     steps:
       - name: Checkout
@@ -31,21 +37,27 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: |
             package-lock.json
             desktop-app/package-lock.json
 
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.ELECTRON_CACHE }}
+          key: electron-${{ runner.os }}-${{ hashFiles('desktop-app/package-lock.json') }}
+
       - name: Install root dependencies
-        run: npm ci
+        run: npm ci --no-audit
 
       - name: Build web app (Vite)
         run: npm run build
 
       - name: Install desktop dependencies
         working-directory: desktop-app
-        run: npm ci
+        run: npm ci --no-audit
 
       - name: Copy web build assets into desktop app
         working-directory: desktop-app
