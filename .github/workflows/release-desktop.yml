@@ -1,0 +1,95 @@
+name: Build & Release Desktop App
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to upload assets to (e.g. v0.1.1). If omitted, assets are uploaded as workflow artifacts only."
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            desktop-app/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build web app (Vite)
+        run: npm run build
+
+      - name: Install desktop dependencies
+        working-directory: desktop-app
+        run: npm ci
+
+      - name: Copy web build assets into desktop app
+        working-directory: desktop-app
+        run: npm run copy-assets
+
+      - name: Make desktop distributables (macOS universal)
+        if: runner.os == 'macOS'
+        working-directory: desktop-app
+        env:
+          NODE_ENV: production
+          MAC_SIGN: "false"
+          MAC_NOTARIZE: "false"
+        run: npm run make -- --arch=universal
+
+      - name: Make desktop distributables (Windows)
+        if: runner.os == 'Windows'
+        working-directory: desktop-app
+        env:
+          NODE_ENV: production
+        run: npm run make
+
+      - name: Upload workflow artifacts (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ runner.os }}
+          path: desktop-app/out/make/**
+          if-no-files-found: error
+
+      - name: Upload assets to GitHub Release (tag push)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            desktop-app/out/make/**/*.dmg
+            desktop-app/out/make/**/*.zip
+            desktop-app/out/make/**/*.exe
+
+      - name: Upload assets to GitHub Release (manual tag input)
+        if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          files: |
+            desktop-app/out/make/**/*.dmg
+            desktop-app/out/make/**/*.zip
+            desktop-app/out/make/**/*.exe
+
+
