@@ -165,6 +165,9 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 
+# Desktop build outputs
+desktop-app/out-builder/
+
 # Offline desktop resources (do not commit large models/binaries)
 desktop-app/resources/models/*.gguf
 desktop-app/resources/llama/**

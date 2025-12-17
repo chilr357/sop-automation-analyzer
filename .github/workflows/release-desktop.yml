@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to upload assets to (e.g. v0.1.1). If omitted, assets are uploaded as workflow artifacts only."
+        description: "Tag to publish to (must match desktop-app/package.json version, e.g. v1.0.2). If omitted, builds artifacts only."
         required: false
         type: string
   push:
@@ -32,6 +32,10 @@ jobs:
       NPM_CONFIG_FETCH_RETRIES: "5"
       NPM_CONFIG_FETCH_RETRY_MINTIMEOUT: "20000"
       NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT: "120000"
+      # electron-builder publishing
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Disable macOS signing unless you later add CSC_* secrets for signing/notarization.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
     steps:
       - name: Checkout
@@ -66,48 +70,33 @@ jobs:
         working-directory: desktop-app
         run: npm run copy-assets
 
-      - name: Make desktop distributables (macOS)
-        if: runner.os == 'macOS'
+      - name: Build desktop (no publish) - workflow_dispatch without tag
+        if: github.event_name == 'workflow_dispatch' && inputs.tag == ''
         working-directory: desktop-app
         env:
           NODE_ENV: production
-          MAC_SIGN: "false"
-          MAC_NOTARIZE: "false"
-        run: npm run make
+        run: npm run dist:ci
 
-      - name: Make desktop distributables (Windows)
-        if: runner.os == 'Windows'
+      - name: Build & publish desktop to GitHub Release (tag push)
+        if: startsWith(github.ref, 'refs/tags/')
         working-directory: desktop-app
         env:
           NODE_ENV: production
-          # Disable Squirrel installer in CI (requires icon assets); ship ZIP instead.
-          WIN_INSTALLER: "false"
-        run: npm run make
+        run: npm run dist:publish
+
+      - name: Build & publish desktop to GitHub Release (manual tag input)
+        if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+        working-directory: desktop-app
+        env:
+          NODE_ENV: production
+        run: npm run dist:publish
 
       - name: Upload workflow artifacts (always)
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ runner.os }}
-          path: desktop-app/out/make/**
+          path: |
+            desktop-app/out-builder/**
           if-no-files-found: error
-
-      - name: Upload assets to GitHub Release (tag push)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            desktop-app/out/make/**/*.dmg
-            desktop-app/out/make/**/*.zip
-            desktop-app/out/make/**/*.exe
-
-      - name: Upload assets to GitHub Release (manual tag input)
-        if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag }}
-          files: |
-            desktop-app/out/make/**/*.dmg
-            desktop-app/out/make/**/*.zip
-            desktop-app/out/make/**/*.exe
 
 

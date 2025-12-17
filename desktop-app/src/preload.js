@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   pickPdfFiles: () => ipcRenderer.invoke('dialog:pickPdfFiles'),
   analyzePdfPaths: (filePaths) => ipcRenderer.invoke('analysis:analyzePdfPaths', filePaths),
   pathToFileUrl: (filePath) => ipcRenderer.invoke('util:pathToFileUrl', filePath),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  quitAndInstallUpdate: () => ipcRenderer.invoke('update:quitAndInstall'),
   openExternal: (url) => {
     if (!url || typeof url !== 'string') {
       return;

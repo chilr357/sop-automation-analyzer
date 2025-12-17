@@ -15,6 +15,10 @@ declare global {
         filePaths: string[]
       ) => Promise<Array<{ ok: true; filePath: string; report: AnalysisReport } | { ok: false; filePath: string; error: string }>>;
       pathToFileUrl: (filePath: string) => Promise<string | null>;
+
+      // Auto-updater
+      checkForUpdates: () => Promise<{ ok: boolean; message?: string; result?: unknown }>;
+      quitAndInstallUpdate: () => Promise<{ ok: boolean; message?: string }>;
     };
   }
 }

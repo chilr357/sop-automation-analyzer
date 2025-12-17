@@ -2,15 +2,23 @@
   "name": "sop-automation-analyzer-desktop",
   "productName": "Digital Process Automation Analyzer",
   "version": "0.1.0",
+  "description": "Desktop wrapper for the Digital Process Automation Analyzer.",
+  "author": "chilr357",
   "main": "src/main.js",
   "private": true,
   "scripts": {
     "start": "cross-env NODE_ENV=development electron-forge start",
     "package": "cross-env NODE_ENV=production electron-forge package",
     "make": "cross-env NODE_ENV=production electron-forge make",
-    "copy-assets": "node scripts/copy-assets.js"
+    "copy-assets": "node scripts/copy-assets.js",
+    "dist": "electron-builder",
+    "dist:publish": "electron-builder --publish always",
+    "dist:ci": "electron-builder --publish never",
+    "postinstall": "node scripts/fix-napi-canvas-optional.js"
   },
   "dependencies": {
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.6.2",
     "electron-squirrel-startup": "^1.0.0",
     "fs-extra": "^11.2.0",
     "pdfjs-dist": "^4.10.38",
@@ -23,6 +31,54 @@
     "@electron-forge/maker-zip": "^7.9.0",
     "@electron/notarize": "^3.1.0",
     "cross-env": "^7.0.3",
+    "electron-builder": "^26.0.12",
     "electron": "^30.0.8"
+  },
+  "build": {
+    "appId": "com.l-bax.sop-automation",
+    "productName": "Digital Process Automation Analyzer",
+    "asar": true,
+    "npmRebuild": false,
+    "directories": {
+      "output": "out-builder"
+    },
+    "files": [
+      "src/**",
+      "assets/**",
+      "resources/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "chilr357",
+        "repo": "sop-automation-analyzer"
+      }
+    ]
   }
 }

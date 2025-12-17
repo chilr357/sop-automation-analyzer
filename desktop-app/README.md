@@ -1,10 +1,15 @@
-# Digital Process Automation Analyzer Desktop Wrapper
+# Digital Process Automation Analyzer Desktop App
 
-This directory contains an Electron Forge configuration that packages the Digital Process Automation Analyzer web application as a Windows desktop executable.
+This directory contains the Electron desktop application for the Digital Process Automation Analyzer.
+
+It includes:
+- An Electron shell that loads the bundled React SPA (`../dist` copied into `desktop-app/assets`)
+- Offline analysis scaffolding (PDF text extraction + llama.cpp runner) via IPC
+- **Auto-updates** using `electron-updater` backed by **GitHub Releases** (requires electron-builder artifacts)
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 20+ (CI uses Node 22)
 - npm 10+
 - The Vite web app is built via `npm run build` in the project root.
 
@@ -49,30 +54,42 @@ cd desktop-app
 npm run copy-assets
 ```
 
-3. Create a distributable installer:
+3. Create distributables (electron-builder):
 
 ```bash
-npm run make
+npm run dist
 ```
 
-- The Windows installer and portable ZIP reside in `desktop-app/out/make/`.
+Artifacts are written to `desktop-app/out-builder/`.
+
+### Auto-updater (GitHub Releases)
+
+The app checks GitHub Releases for updates using `electron-updater`.
+
+- On launch (production builds), the app calls `autoUpdater.checkForUpdatesAndNotify()`
+- When an update is downloaded, the app prompts to restart and install
+
+#### macOS signing note (important)
+
+For **seamless** macOS auto-updates, the app should be **code signed** (and ideally notarized).
+This repo currently disables signing in CI by default (`CSC_IDENTITY_AUTO_DISCOVERY=false`).
+When you’re ready, add code-signing secrets and enable signing so updates install smoothly on macOS.
 
 ### Scripts
 
 - `npm start` – launches Electron in development mode.
-- `npm run package` – creates a packaged app without installer.
-- `npm run make` – builds the installer and portable zip.
 - `npm run copy-assets` – copies `../dist` into `assets/`.
+- `npm run dist` – builds distributables with electron-builder.
+- `npm run dist:ci` – builds distributables without publishing.
+- `npm run dist:publish` – builds and publishes to GitHub Releases (requires `GH_TOKEN`).
 
 ### Customization
 
-- Place your icon files in `desktop-app/assets/icon.ico` and `desktop-app/assets/icon.png`.
-- Update `forge.config.js` with manufacturer metadata.
-- Modify `src/main.js` to add tray menus, auto-launch, or update mechanisms.
+- Provide icon files if you want branded installers/icons (electron-builder uses the default icon if none are set).
+- Modify `src/main.js` to adjust update UX, tray menus, etc.
 
 ### Notes
 
-- The renderer iframe uses `sandbox="allow-same-origin allow-scripts"` to keep the surface secure.
 - `preload.js` exposes a minimal, safe bridge via `desktopAPI`.
 - When `NODE_ENV` is production, the app loads the packaged `index.html` from `assets/`.
 - Ensure all environment variables required by the web app are inlined during the Vite build.

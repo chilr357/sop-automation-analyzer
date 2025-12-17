@@ -1,6 +1,8 @@
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { autoUpdater } = require('electron-updater');
+const log = require('electron-log');
 const { analyzePdfAtPath } = require('./offline/offlineAnalyzer');
 
 if (require('electron-squirrel-startup')) {
@@ -10,6 +12,58 @@ if (require('electron-squirrel-startup')) {
 const isDev = process.env.NODE_ENV === 'development';
 let mainWindow;
 let shouldQuit = false;
+
+const initAutoUpdater = () => {
+  // electron-updater requires the app-update.yml produced by electron-builder.
+  // Guard in dev so we don't spam errors when running against the Vite dev server.
+  if (isDev) {
+    return;
+  }
+
+  log.transports.file.level = 'info';
+  autoUpdater.logger = log;
+  autoUpdater.autoDownload = true;
+
+  autoUpdater.on('error', (err) => {
+    log.error('autoUpdater error', err);
+  });
+
+  autoUpdater.on('update-available', () => {
+    log.info('Update available');
+    mainWindow?.webContents.send('update:status', { status: 'available' });
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    mainWindow?.webContents.send('update:status', {
+      status: 'downloading',
+      percent: progress?.percent,
+      bytesPerSecond: progress?.bytesPerSecond
+    });
+  });
+
+  autoUpdater.on('update-downloaded', async () => {
+    log.info('Update downloaded');
+    mainWindow?.webContents.send('update:status', { status: 'downloaded' });
+
+    if (!mainWindow) {
+      autoUpdater.quitAndInstall();
+      return;
+    }
+
+    const choice = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      buttons: ['Restart now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Update ready',
+      message: 'An update has been downloaded. Restart now to install it?'
+    });
+
+    if (choice.response === 0) {
+      autoUpdater.quitAndInstall();
+    }
+  });
+};
 
 const getStartUrl = () => {
   if (isDev) {
@@ -78,10 +132,25 @@ const createWindow = () => {
 
 app.on('ready', () => {
   createWindow();
+  initAutoUpdater();
 
   ipcMain.handle('app:getVersion', () => app.getVersion());
   ipcMain.handle('app:getName', () => app.getName());
   ipcMain.handle('app:getStartUrl', () => getStartUrl());
+  ipcMain.handle('update:check', async () => {
+    if (isDev) {
+      return { ok: false, message: 'Updates are disabled in development.' };
+    }
+    const result = await autoUpdater.checkForUpdates();
+    return { ok: true, result };
+  });
+  ipcMain.handle('update:quitAndInstall', async () => {
+    if (isDev) {
+      return { ok: false, message: 'Updates are disabled in development.' };
+    }
+    autoUpdater.quitAndInstall();
+    return { ok: true };
+  });
 
   ipcMain.handle('util:pathToFileUrl', (_event, filePath) => {
     if (!filePath || typeof filePath !== 'string') {
