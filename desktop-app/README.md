@@ -75,6 +75,16 @@ For **seamless** macOS auto-updates, the app should be **code signed** (and idea
 This repo currently disables signing in CI by default (`CSC_IDENTITY_AUTO_DISCOVERY=false`).
 When you’re ready, add code-signing secrets and enable signing so updates install smoothly on macOS.
 
+### Bundling offline analysis into the installer
+
+To make offline analysis work out of the box (no separate “offline pack” step), your installer must include:
+
+- `desktop-app/resources/models/model-8b-q4.gguf`
+- `desktop-app/resources/llama/win-x64/llama.exe` (Windows)
+- `desktop-app/resources/llama/mac-arm64/llama` (macOS Apple Silicon)
+
+See `release-assets/offline-pack/BUILD_INSTRUCTIONS.md` for local + CI instructions.
+
 ### Scripts
 
 - `npm start` – launches Electron in development mode.
