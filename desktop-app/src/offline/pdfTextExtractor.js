@@ -9,6 +9,8 @@ const fs = require('node:fs/promises');
  */
 async function extractPdfPagesText(filePath) {
   const data = await fs.readFile(filePath);
+  // pdfjs expects Uint8Array for binary input (Node's Buffer can break on some platforms/runtimes).
+  const uint8 = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
 
   // pdfjs-dist ships ESM. Use the legacy build which supports Node-style usage.
   // Path reference: pdfjs-dist/legacy/build/pdf.mjs
@@ -16,7 +18,7 @@ async function extractPdfPagesText(filePath) {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
   // In Electron/Node contexts, disabling the worker avoids workerSrc resolution issues.
-  const loadingTask = pdfjs.getDocument({ data, disableWorker: true });
+  const loadingTask = pdfjs.getDocument({ data: uint8, disableWorker: true });
   const pdf = await loadingTask.promise;
 
   const pages = [];
