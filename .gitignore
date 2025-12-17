@@ -173,6 +173,10 @@ release-assets/tmp-downloads/
 release-assets/offline-pack-generated.zip
 scripts/offline-resources.config.json
 
+# Local secrets (never commit)
+.env
+.env.*
+
 # Offline desktop resources (do not commit large models/binaries)
 desktop-app/resources/models/*.gguf
 desktop-app/resources/llama/**
