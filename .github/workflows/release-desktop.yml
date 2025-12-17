@@ -120,12 +120,18 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
           files: |
-            **/*.dmg
-            **/*.zip
-            **/*.exe
-            **/*.yml
-            **/*.blockmap
+            **/*-arm64.dmg
+            **/*-arm64.dmg.blockmap
+            **/*-arm64-mac.zip
+            **/*-arm64-mac.zip.blockmap
+            **/*-win.zip
+            **/*Setup*.exe
+            **/*Setup*.exe.blockmap
+            **/latest.yml
+            **/latest-mac.yml
           fail_on_unmatched_files: true
 
       - name: Publish GitHub Release (manual tag input)
@@ -134,12 +140,18 @@ jobs:
         with:
           tag_name: ${{ inputs.tag }}
           name: ${{ inputs.tag }}
+          draft: false
+          prerelease: false
           files: |
-            **/*.dmg
-            **/*.zip
-            **/*.exe
-            **/*.yml
-            **/*.blockmap
+            **/*-arm64.dmg
+            **/*-arm64.dmg.blockmap
+            **/*-arm64-mac.zip
+            **/*-arm64-mac.zip.blockmap
+            **/*-win.zip
+            **/*Setup*.exe
+            **/*Setup*.exe.blockmap
+            **/latest.yml
+            **/latest-mac.yml
           fail_on_unmatched_files: true
 
 
