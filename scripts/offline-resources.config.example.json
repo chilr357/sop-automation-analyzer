@@ -1,0 +1,22 @@
+{
+  "model": {
+    "url": "",
+    "filename": "model-8b-q4.gguf"
+  },
+  "llama": {
+    "windows": {
+      "url": "",
+      "binaryNameHints": ["llama.exe", "llama-cli.exe", "main.exe"]
+    },
+    "macArm64": {
+      "url": "",
+      "binaryNameHints": ["llama", "llama-cli", "main"]
+    },
+    "macX64": {
+      "url": "",
+      "binaryNameHints": ["llama", "llama-cli", "main"]
+    }
+  }
+}
+
+

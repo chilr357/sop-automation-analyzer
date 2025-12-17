@@ -168,6 +168,11 @@ vite.config.ts.timestamp-*
 # Desktop build outputs
 desktop-app/out-builder/
 
+# Offline pack generation (large / local-only)
+release-assets/tmp-downloads/
+release-assets/offline-pack-generated.zip
+scripts/offline-resources.config.json
+
 # Offline desktop resources (do not commit large models/binaries)
 desktop-app/resources/models/*.gguf
 desktop-app/resources/llama/**
