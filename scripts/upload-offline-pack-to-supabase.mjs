@@ -28,20 +28,22 @@ function parseArgs(argv) {
 
 async function main() {
   const { bucket, object, file } = parseArgs(process.argv);
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrlRaw = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
 
-  if (!supabaseUrl) throw new Error('Missing SUPABASE_URL (e.g. https://<project-ref>.supabase.co)');
-  if (!key) throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY (do not commit this)');
+  if (!supabaseUrlRaw) throw new Error('Missing SUPABASE_URL (e.g. https://<project-ref>.supabase.co)');
+  if (!key) throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SERVICE_ROLE). Do not commit this.');
   if (!bucket) throw new Error('Missing --bucket');
   if (!object) throw new Error('Missing --object (e.g. v1/offline-pack-generated.zip)');
   if (!file) throw new Error('Missing --file');
+
+  const supabaseUrl = supabaseUrlRaw.endsWith('/') ? supabaseUrlRaw.slice(0, -1) : supabaseUrlRaw;
 
   const absFile = path.isAbsolute(file) ? file : path.resolve(process.cwd(), file);
   const stat = fs.statSync(absFile);
   if (!stat.isFile()) throw new Error(`Not a file: ${absFile}`);
 
-  const endpoint = `${supabaseUrl.replace(/\\/$/, '')}/storage/v1/object/${encodeURIComponent(bucket)}/${object
+  const endpoint = `${supabaseUrl}/storage/v1/object/${encodeURIComponent(bucket)}/${object
     .split('/')
     .map(encodeURIComponent)
     .join('/')}`;
@@ -68,7 +70,7 @@ async function main() {
 
   console.log('Upload OK.');
   console.log('Public URL (if bucket is public):');
-  console.log(`${supabaseUrl.replace(/\\/$/, '')}/storage/v1/object/public/${bucket}/${object}`);
+  console.log(`${supabaseUrl}/storage/v1/object/public/${bucket}/${object}`);
 }
 
 main().catch((err) => {
