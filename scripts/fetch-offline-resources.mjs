@@ -60,6 +60,17 @@ function run(cmd, cmdArgs, opts = {}) {
 async function downloadFile(url, destPath) {
   await ensureDir(path.dirname(destPath));
 
+  // If already downloaded, skip (useful for multi-GB models).
+  try {
+    const st = await fsp.stat(destPath);
+    if (st.isFile() && st.size > 0) {
+      console.log(`Already exists, skipping download: ${destPath} (${st.size} bytes)`);
+      return;
+    }
+  } catch {
+    // ignore
+  }
+
   // Prefer curl for robust large-file downloads + redirects.
   // Windows runners have curl; macOS has curl.
   await run('curl', ['-L', '--fail', '--retry', '5', '--retry-delay', '2', '-o', destPath, url]);
