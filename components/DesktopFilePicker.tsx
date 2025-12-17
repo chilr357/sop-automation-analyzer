@@ -11,6 +11,26 @@ interface DesktopFilePickerProps {
 export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading, onAnalyzePaths }) => {
   const [selectedFiles, setSelectedFiles] = useState<DesktopPickedFile[]>([]);
   const [pickError, setPickError] = useState<string | null>(null);
+  const [offlineStatus, setOfflineStatus] = useState<{ installed: boolean; url: string } | null>(null);
+  const [offlineInstallError, setOfflineInstallError] = useState<string | null>(null);
+  const [isInstallingOffline, setIsInstallingOffline] = useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const s = await window.desktopAPI?.getOfflineResourcesStatus?.();
+        if (!cancelled && s) {
+          setOfflineStatus({ installed: s.installed, url: s.url });
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handlePick = useCallback(async () => {
     setPickError(null);
@@ -24,6 +44,24 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to pick files.';
       setPickError(msg);
+    }
+  }, []);
+
+  const handleInstallOffline = useCallback(async () => {
+    setOfflineInstallError(null);
+    setIsInstallingOffline(true);
+    try {
+      const api = window.desktopAPI;
+      if (!api?.installOfflineResources) {
+        throw new Error('Offline installer is unavailable.');
+      }
+      const result = await api.installOfflineResources();
+      setOfflineStatus({ installed: result.installed, url: result.url });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to install offline resources.';
+      setOfflineInstallError(msg);
+    } finally {
+      setIsInstallingOffline(false);
     }
   }, []);
 
@@ -41,13 +79,44 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
     <div className="w-full max-w-2xl mx-auto p-6 bg-brand-light border border-brand-border rounded-lg shadow-lg">
       <div className="space-y-3">
         <p className="text-sm text-brand-gray">
-          Desktop mode: pick PDFs from your computer. (Offline analysis requires the local model + llama binaries.)
+          Desktop mode: pick PDFs from your computer.
         </p>
+
+        {offlineStatus && !offlineStatus.installed && (
+          <div className="p-3 rounded-md border border-yellow-500/30 bg-yellow-500/10 text-sm text-yellow-200 space-y-2">
+            <div>
+              Offline analysis isn’t installed yet. Download the offline pack (~3–4GB) to enable offline analysis.
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={handleInstallOffline}
+                disabled={isLoading || isInstallingOffline}
+                className="bg-yellow-600 text-black font-semibold py-2 px-4 rounded-md hover:bg-yellow-500 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+              >
+                {isInstallingOffline ? 'Downloading…' : 'Download Offline Pack'}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.desktopAPI?.openExternal?.(offlineStatus.url)}
+                disabled={isLoading || isInstallingOffline}
+                className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+              >
+                Open Download Link
+              </button>
+            </div>
+            {offlineInstallError && (
+              <div className="text-red-200">
+                {offlineInstallError}
+              </div>
+            )}
+          </div>
+        )}
 
         <button
           type="button"
           onClick={handlePick}
-          disabled={isLoading}
+          disabled={isLoading || isInstallingOffline}
           className="w-full bg-gray-700 text-white font-semibold py-3 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
         >
           Select PDF Document(s)
@@ -88,7 +157,7 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
 
       <button
         onClick={handleAnalyzeClick}
-        disabled={selectedFiles.length === 0 || isLoading}
+        disabled={selectedFiles.length === 0 || isLoading || isInstallingOffline}
         className="mt-6 w-full bg-brand-blue text-white font-bold py-3 px-4 rounded-md hover:bg-blue-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center"
       >
         {isLoading ? 'Analyzing...' : `Analyze ${selectedFiles.length} Document(s)`}

@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   pathToFileUrl: (filePath) => ipcRenderer.invoke('util:pathToFileUrl', filePath),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   quitAndInstallUpdate: () => ipcRenderer.invoke('update:quitAndInstall'),
+  getOfflineResourcesStatus: () => ipcRenderer.invoke('offline:status'),
+  installOfflineResources: () => ipcRenderer.invoke('offline:install'),
   openExternal: (url) => {
     if (!url || typeof url !== 'string') {
       return;

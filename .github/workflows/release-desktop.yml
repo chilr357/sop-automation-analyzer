@@ -36,8 +36,6 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       # Disable macOS signing unless you later add CSC_* secrets for signing/notarization.
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      # Optional: set OFFLINE_PACK_URL secret to a zip containing desktop-app/resources/*
-      OFFLINE_PACK_URL: ${{ secrets.OFFLINE_PACK_URL }}
 
     steps:
       - name: Checkout
@@ -71,34 +69,6 @@ jobs:
       - name: Copy web build assets into desktop app
         working-directory: desktop-app
         run: npm run copy-assets
-
-      - name: Fetch offline analysis pack (macOS/Linux)
-        if: runner.os != 'Windows' && env.OFFLINE_PACK_URL != ''
-        working-directory: desktop-app
-        run: |
-          echo "Downloading offline pack..."
-          curl -L "$OFFLINE_PACK_URL" -o offline-pack.zip
-          rm -rf resources
-          unzip -q offline-pack.zip
-          # Expect the zip to contain a top-level `resources/` folder
-          if [ ! -d "resources" ]; then
-            echo "offline pack zip must contain a top-level resources/ folder"
-            exit 1
-          fi
-
-      - name: Fetch offline analysis pack (Windows)
-        if: runner.os == 'Windows' && env.OFFLINE_PACK_URL != ''
-        working-directory: desktop-app
-        shell: pwsh
-        run: |
-          Write-Host "Downloading offline pack..."
-          Invoke-WebRequest -Uri $env:OFFLINE_PACK_URL -OutFile offline-pack.zip
-          if (Test-Path resources) { Remove-Item -Recurse -Force resources }
-          Expand-Archive -Path offline-pack.zip -DestinationPath .
-          if (-not (Test-Path resources)) {
-            Write-Error "offline pack zip must contain a top-level resources/ folder"
-            exit 1
-          }
 
       - name: Build desktop (no publish) - workflow_dispatch without tag
         if: github.event_name == 'workflow_dispatch' && inputs.tag == ''

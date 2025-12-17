@@ -4,6 +4,7 @@ const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
 const { analyzePdfAtPath } = require('./offline/offlineAnalyzer');
+const { getOfflineResourcesStatus, installOfflineResources } = require('./offline/offlineResourcesInstaller');
 
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -150,6 +151,15 @@ app.on('ready', () => {
     }
     autoUpdater.quitAndInstall();
     return { ok: true };
+  });
+
+  ipcMain.handle('offline:status', async () => {
+    return await getOfflineResourcesStatus();
+  });
+
+  ipcMain.handle('offline:install', async () => {
+    const result = await installOfflineResources();
+    return result;
   });
 
   ipcMain.handle('util:pathToFileUrl', (_event, filePath) => {

@@ -3,6 +3,7 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { getUserOfflineResourcesDir } = require('./offlineResourcesInstaller');
 
 function isPackaged() {
   // Electron sets this in main/preload contexts.
@@ -10,9 +11,20 @@ function isPackaged() {
 }
 
 function getResourcesBase() {
-  // We keep offline resources under `desktop-app/resources/` in dev,
-  // and under `<resourcesPath>/resources/` in packaged builds via Forge extraResource.
-  if (process.resourcesPath && process.env.NODE_ENV === 'production') {
+  // Preferred: userData-installed offline resources (survives auto-updates, writable).
+  // Fallback: packaged resources folder.
+  try {
+    const userDir = getUserOfflineResourcesDir();
+    if (userDir && fs.existsSync(userDir)) {
+      return userDir;
+    }
+  } catch {
+    // ignore
+  }
+
+  // In dev, offline resources are in `desktop-app/resources/`.
+  // In packaged builds, `extraResources` are copied under `<resourcesPath>/resources/`.
+  if (process.resourcesPath) {
     return path.join(process.resourcesPath, 'resources');
   }
   return path.resolve(__dirname, '..', '..', 'resources');
