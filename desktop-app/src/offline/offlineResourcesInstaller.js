@@ -60,16 +60,28 @@ function run(cmd, args, opts = {}) {
   });
 }
 
+function getWindowsPowerShellExe() {
+  // Prefer built-in Windows PowerShell (present on essentially all Windows installs).
+  const systemRoot = process.env.SystemRoot || 'C:\\Windows';
+  const full = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+  if (fs.existsSync(full)) {
+    return full;
+  }
+  // Fallback to PATH lookup.
+  return 'powershell.exe';
+}
+
+async function runWindowsPowerShell(command) {
+  const ps = getWindowsPowerShellExe();
+  await run(ps, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command]);
+}
+
 async function downloadToFile(url, destPath) {
   await fsp.mkdir(path.dirname(destPath), { recursive: true });
 
-  // Use curl on macOS/Linux; on Windows, use PowerShell for reliability.
+  // Use curl on macOS/Linux; on Windows, use Windows PowerShell (pwsh is not always installed).
   if (process.platform === 'win32') {
-    await run('pwsh', [
-      '-NoProfile',
-      '-Command',
-      `Invoke-WebRequest -Uri "${url}" -OutFile "${destPath}"`
-    ]);
+    await runWindowsPowerShell(`Invoke-WebRequest -Uri "${url}" -OutFile "${destPath}"`);
   } else {
     await run('curl', ['-L', '--fail', '--retry', '5', '--retry-delay', '2', '-o', destPath, url]);
   }
@@ -78,11 +90,7 @@ async function downloadToFile(url, destPath) {
 async function extractZip(zipPath, destDir) {
   await fsp.mkdir(destDir, { recursive: true });
   if (process.platform === 'win32') {
-    await run('pwsh', [
-      '-NoProfile',
-      '-Command',
-      `Expand-Archive -Force -Path "${zipPath}" -DestinationPath "${destDir}"`
-    ]);
+    await runWindowsPowerShell(`Expand-Archive -Force -Path "${zipPath}" -DestinationPath "${destDir}"`);
     return;
   }
   await run('unzip', ['-q', '-o', zipPath, '-d', destDir]);
