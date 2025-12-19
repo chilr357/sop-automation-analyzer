@@ -97,11 +97,13 @@ async function runLlamaCli({ prompt }) {
   // Defaults here are intentionally conservative for Windows CPU runs:
   // - Many Llama-2-style models train at 4k context; using 8k can error unless the prompt is trimmed.
   // - Larger ctx also increases memory usage (KV cache).
+  const threads = Math.max(1, (os.cpus()?.length || 4) - 1);
   const args = [
     '-m', modelPath,
     '-f', promptPath,
     '--ctx-size', '4096',
     '--n-predict', '1536',
+    '-t', String(threads),
     '--temp', '0.2',
     '--top-p', '0.9',
     '--repeat-penalty', '1.1',
