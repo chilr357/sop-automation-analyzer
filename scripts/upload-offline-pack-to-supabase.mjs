@@ -16,18 +16,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 function parseArgs(argv) {
-  const args = { bucket: '', object: '', file: '' };
+  const args = { bucket: '', object: '', file: '', overwrite: false };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--bucket') args.bucket = argv[++i] || '';
     else if (a === '--object') args.object = argv[++i] || '';
     else if (a === '--file') args.file = argv[++i] || '';
+    else if (a === '--overwrite' || a === '--upsert') args.overwrite = true;
   }
   return args;
 }
 
 async function main() {
-  const { bucket, object, file } = parseArgs(process.argv);
+  const { bucket, object, file, overwrite } = parseArgs(process.argv);
   const supabaseUrlRaw = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
 
@@ -43,12 +44,14 @@ async function main() {
   const stat = fs.statSync(absFile);
   if (!stat.isFile()) throw new Error(`Not a file: ${absFile}`);
 
-  const endpoint = `${supabaseUrl}/storage/v1/object/${encodeURIComponent(bucket)}/${object
+  const endpointBase = `${supabaseUrl}/storage/v1/object/${encodeURIComponent(bucket)}/${object
     .split('/')
     .map(encodeURIComponent)
     .join('/')}`;
+  // If overwrite is set, use upsert=true so existing objects are replaced.
+  const endpoint = overwrite ? `${endpointBase}?upsert=true` : endpointBase;
 
-  console.log(`Uploading ${absFile} (${stat.size} bytes) -> ${endpoint}`);
+  console.log(`Uploading ${absFile} (${stat.size} bytes) -> ${endpoint}${overwrite ? ' (overwrite)' : ''}`);
 
   const res = await fetch(endpoint, {
     method: 'POST',
