@@ -19,6 +19,7 @@ declare global {
       // Auto-updater
       checkForUpdates: () => Promise<{ ok: boolean; message?: string; result?: unknown }>;
       quitAndInstallUpdate: () => Promise<{ ok: boolean; message?: string }>;
+      onUpdateStatus: (callback: (payload: { status: string; percent?: number; bytesPerSecond?: number; message?: string }) => void) => () => void;
 
       // Offline pack installer (downloads from Supabase public URL and installs into userData)
       getOfflineResourcesStatus: () => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string }>;

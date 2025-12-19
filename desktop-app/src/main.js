@@ -13,6 +13,7 @@ if (require('electron-squirrel-startup')) {
 const isDev = process.env.NODE_ENV === 'development';
 let mainWindow;
 let shouldQuit = false;
+let updateIntervalHandle = null;
 
 const initAutoUpdater = () => {
   // electron-updater requires the app-update.yml produced by electron-builder.
@@ -21,21 +22,38 @@ const initAutoUpdater = () => {
     return;
   }
 
+  const sendUpdateStatus = (payload) => {
+    try {
+      mainWindow?.webContents.send('update:status', payload);
+    } catch {
+      // ignore
+    }
+  };
+
   log.transports.file.level = 'info';
   autoUpdater.logger = log;
   autoUpdater.autoDownload = true;
 
+  autoUpdater.on('checking-for-update', () => {
+    sendUpdateStatus({ status: 'checking' });
+  });
+
   autoUpdater.on('error', (err) => {
     log.error('autoUpdater error', err);
+    sendUpdateStatus({ status: 'error', message: err?.message || String(err) });
   });
 
   autoUpdater.on('update-available', () => {
     log.info('Update available');
-    mainWindow?.webContents.send('update:status', { status: 'available' });
+    sendUpdateStatus({ status: 'available' });
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    sendUpdateStatus({ status: 'not-available' });
   });
 
   autoUpdater.on('download-progress', (progress) => {
-    mainWindow?.webContents.send('update:status', {
+    sendUpdateStatus({
       status: 'downloading',
       percent: progress?.percent,
       bytesPerSecond: progress?.bytesPerSecond
@@ -44,7 +62,7 @@ const initAutoUpdater = () => {
 
   autoUpdater.on('update-downloaded', async () => {
     log.info('Update downloaded');
-    mainWindow?.webContents.send('update:status', { status: 'downloaded' });
+    sendUpdateStatus({ status: 'downloaded' });
 
     if (!mainWindow) {
       autoUpdater.quitAndInstall();
@@ -64,6 +82,24 @@ const initAutoUpdater = () => {
       autoUpdater.quitAndInstall();
     }
   });
+
+  // Auto-check on launch + periodically (production only).
+  const check = async () => {
+    try {
+      await autoUpdater.checkForUpdatesAndNotify();
+    } catch (e) {
+      log.error('autoUpdater check failed', e);
+      sendUpdateStatus({ status: 'error', message: e?.message || String(e) });
+    }
+  };
+
+  // Initial check shortly after app start.
+  setTimeout(check, 5_000);
+
+  // Periodic checks (every 6 hours).
+  if (!updateIntervalHandle) {
+    updateIntervalHandle = setInterval(check, 6 * 60 * 60 * 1000);
+  }
 };
 
 const getStartUrl = () => {
@@ -141,6 +177,11 @@ app.on('ready', () => {
   ipcMain.handle('update:check', async () => {
     if (isDev) {
       return { ok: false, message: 'Updates are disabled in development.' };
+    }
+    try {
+      mainWindow?.webContents.send('update:status', { status: 'checking' });
+    } catch {
+      // ignore
     }
     const result = await autoUpdater.checkForUpdates();
     return { ok: true, result };

@@ -11,6 +11,18 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   pathToFileUrl: (filePath) => ipcRenderer.invoke('util:pathToFileUrl', filePath),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   quitAndInstallUpdate: () => ipcRenderer.invoke('update:quitAndInstall'),
+  onUpdateStatus: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const handler = (_event, payload) => {
+      try {
+        callback(payload);
+      } catch {
+        // ignore
+      }
+    };
+    ipcRenderer.on('update:status', handler);
+    return () => ipcRenderer.removeListener('update:status', handler);
+  },
   getOfflineResourcesStatus: () => ipcRenderer.invoke('offline:status'),
   installOfflineResources: () => ipcRenderer.invoke('offline:install'),
   pickOfflinePackZip: () => ipcRenderer.invoke('dialog:pickOfflinePackZip'),

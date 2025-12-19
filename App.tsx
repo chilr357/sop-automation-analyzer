@@ -13,6 +13,8 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errors, setErrors] = useState<{ fileName: string; message: string }[]>([]);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<{ status: string; percent?: number; message?: string } | null>(null);
+  const [updateActionMessage, setUpdateActionMessage] = useState<string | null>(null);
 
   const clearPreviousReports = useCallback(() => {
     setAnalysisReports((previousReports) => {
@@ -116,6 +118,88 @@ const App: React.FC = () => {
     };
   }, []);
 
+  React.useEffect(() => {
+    const api = window.desktopAPI;
+    if (!api?.onUpdateStatus) return;
+    const unsubscribe = api.onUpdateStatus((payload) => {
+      if (payload && typeof payload === 'object' && typeof payload.status === 'string') {
+        setUpdateStatus(payload);
+      }
+    });
+    return () => {
+      try {
+        unsubscribe?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  const handleCheckForUpdates = useCallback(async () => {
+    setUpdateActionMessage(null);
+    const api = window.desktopAPI;
+    if (!api?.checkForUpdates) {
+      setUpdateActionMessage('Updates are not available in this mode.');
+      return;
+    }
+    try {
+      const res = await api.checkForUpdates();
+      if (!res?.ok) {
+        setUpdateActionMessage(res?.message || 'Update check failed.');
+        return;
+      }
+      setUpdateActionMessage('Checked for updates.');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Update check failed.';
+      setUpdateActionMessage(msg);
+    }
+  }, []);
+
+  const handleRestartToUpdate = useCallback(async () => {
+    const api = window.desktopAPI;
+    if (!api?.quitAndInstallUpdate) return;
+    await api.quitAndInstallUpdate();
+  }, []);
+
+  const UpdateControls: React.FC = () => {
+    if (!window.desktopAPI?.checkForUpdates) return null;
+    const status = updateStatus?.status;
+    const percent = updateStatus?.percent;
+    const statusText =
+      status === 'checking' ? 'Checking for updates…' :
+      status === 'available' ? 'Update found. Downloading…' :
+      status === 'downloading' ? `Downloading update…${typeof percent === 'number' ? ` ${percent.toFixed(0)}%` : ''}` :
+      status === 'downloaded' ? 'Update downloaded.' :
+      status === 'not-available' ? 'You’re up to date.' :
+      status === 'error' ? `Update error: ${updateStatus?.message || 'Unknown error'}` :
+      null;
+
+    return (
+      <div className="mt-3 flex flex-col items-center gap-2">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleCheckForUpdates}
+            className="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15 text-white text-sm border border-white/10"
+          >
+            Software Update
+          </button>
+          {status === 'downloaded' ? (
+            <button
+              type="button"
+              onClick={handleRestartToUpdate}
+              className="px-3 py-1.5 rounded-md bg-brand-blue hover:bg-brand-blue/90 text-white text-sm"
+            >
+              Restart to Update
+            </button>
+          ) : null}
+        </div>
+        {statusText ? <div className="text-xs text-brand-gray/90">{statusText}</div> : null}
+        {updateActionMessage ? <div className="text-xs text-brand-gray/80">{updateActionMessage}</div> : null}
+      </div>
+    );
+  };
+
   const Header: React.FC = () => (
     <header className="text-center p-8">
       <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl md:text-6xl">
@@ -124,6 +208,7 @@ const App: React.FC = () => {
       {appVersion ? (
         <p className="mt-2 text-sm text-brand-gray/80">v{appVersion}</p>
       ) : null}
+      <UpdateControls />
       <p className="mt-3 max-w-md mx-auto text-base text-brand-gray sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
         Leverage AI to analyze your Standard Operating Procedures, identify automation opportunities, and enhance operational efficiency.
       </p>
