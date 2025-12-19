@@ -105,7 +105,18 @@ async function runLlamaCli({ prompt }) {
   ];
 
   return await new Promise((resolve, reject) => {
-    const child = spawn(llamaBin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const binDir = path.dirname(llamaBin);
+    const env = { ...process.env };
+    // Windows: ensure the llama folder is on PATH so adjacent DLLs can be resolved.
+    const pathKey = process.platform === 'win32' ? 'Path' : 'PATH';
+    const sep = process.platform === 'win32' ? ';' : ':';
+    env[pathKey] = `${binDir}${sep}${env[pathKey] || ''}`;
+
+    const child = spawn(llamaBin, args, {
+      cwd: binDir,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
     let stdout = '';
     let stderr = '';
 
@@ -120,6 +131,18 @@ async function runLlamaCli({ prompt }) {
     child.on('close', (code) => {
       if (code === 0) {
         return resolve(stdout);
+      }
+      // 3221225781 == 0xC0000135 (STATUS_DLL_NOT_FOUND) on Windows.
+      if (process.platform === 'win32' && code === 3221225781) {
+        return reject(
+          new Error(
+            [
+              'llama.cpp failed to start (missing DLL dependencies).',
+              'This usually means the offline pack only contained the EXE but not the required adjacent DLLs, or it was a CUDA build missing CUDA runtime DLLs.',
+              'Fix: regenerate/reinstall the offline pack so `offline-resources/llama/win-x64/` includes the EXE *and* all sibling .dll files from the llama.cpp release zip, then retry.'
+            ].join(' ')
+          )
+        );
       }
       reject(new Error(`llama.cpp exited with code ${code}. ${stderr}`.trim()));
     });

@@ -117,6 +117,12 @@ async function copyFile(src, dest) {
   await fsp.copyFile(src, dest);
 }
 
+async function copyDirContents(srcDir, destDir) {
+  await ensureDir(destDir);
+  // Node 18+ supports fs.cp
+  await fsp.cp(srcDir, destDir, { recursive: true });
+}
+
 async function chmodIfNeeded(p) {
   if (process.platform !== 'win32') {
     await fsp.chmod(p, 0o755);
@@ -193,6 +199,7 @@ async function main() {
     await downloadFile(url, tmpPath);
 
     let binSrc = tmpPath;
+    let binSrcDir = null;
     if (isZip) {
       const extracted = path.join(tmpDir, `extract-${t.key}`);
       await fsp.rm(extracted, { recursive: true, force: true });
@@ -202,12 +209,30 @@ async function main() {
         throw new Error(`Could not find llama binary in ${tmpPath}. Looked for: ${nameHints.join(', ')}`);
       }
       binSrc = found;
+      binSrcDir = path.dirname(found);
     }
 
     const binName = t.ext ? 'llama.exe' : 'llama';
     const binDest = path.join(t.destDir, binName);
     console.log(`Installing llama ${t.key} -> ${binDest}`);
-    await copyFile(binSrc, binDest);
+    // Important (Windows): llama.cpp zips ship required DLLs next to the EXE.
+    // If we only copy the EXE, it will crash with missing DLL errors (0xC0000135).
+    await fsp.rm(t.destDir, { recursive: true, force: true });
+    await ensureDir(t.destDir);
+
+    if (binSrcDir) {
+      // Copy the entire directory containing the binary (EXE + DLLs).
+      await copyDirContents(binSrcDir, t.destDir);
+
+      // Ensure we have a stable entrypoint name expected by the app: llama(.exe)
+      if (!fs.existsSync(binDest)) {
+        await copyFile(binSrc, binDest);
+      }
+    } else {
+      // Direct binary download (no zip) - only the binary is available.
+      await copyFile(binSrc, binDest);
+    }
+
     await chmodIfNeeded(binDest);
   }
 
