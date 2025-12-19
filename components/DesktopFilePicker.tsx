@@ -11,17 +11,18 @@ interface DesktopFilePickerProps {
 export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading, onAnalyzePaths }) => {
   const [selectedFiles, setSelectedFiles] = useState<DesktopPickedFile[]>([]);
   const [pickError, setPickError] = useState<string | null>(null);
-  const [offlineStatus, setOfflineStatus] = useState<{ installed: boolean; url: string } | null>(null);
+  const [offlineStatus, setOfflineStatus] = useState<{ installed: boolean; url: string; baseDir?: string } | null>(null);
   const [offlineInstallError, setOfflineInstallError] = useState<string | null>(null);
   const [isInstallingOffline, setIsInstallingOffline] = useState(false);
+  const [isInstallingFromZip, setIsInstallingFromZip] = useState(false);
 
-  React.useEffect(() => {
+  const refreshOfflineStatus = useCallback(async () => {
     let cancelled = false;
     (async () => {
       try {
         const s = await window.desktopAPI?.getOfflineResourcesStatus?.();
         if (!cancelled && s) {
-          setOfflineStatus({ installed: s.installed, url: s.url });
+          setOfflineStatus({ installed: s.installed, url: s.url, baseDir: s.baseDir });
         }
       } catch {
         // ignore
@@ -31,6 +32,10 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
       cancelled = true;
     };
   }, []);
+
+  React.useEffect(() => {
+    void refreshOfflineStatus();
+  }, [refreshOfflineStatus]);
 
   const handlePick = useCallback(async () => {
     setPickError(null);
@@ -56,12 +61,34 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
         throw new Error('Offline installer is unavailable.');
       }
       const result = await api.installOfflineResources();
-      setOfflineStatus({ installed: result.installed, url: result.url });
+      setOfflineStatus({ installed: result.installed, url: result.url, baseDir: result.baseDir });
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to install offline resources.';
       setOfflineInstallError(msg);
     } finally {
       setIsInstallingOffline(false);
+    }
+  }, []);
+
+  const handleInstallOfflineFromZip = useCallback(async () => {
+    setOfflineInstallError(null);
+    setIsInstallingFromZip(true);
+    try {
+      const api = window.desktopAPI;
+      if (!api?.pickOfflinePackZip || !api?.installOfflineResourcesFromZip) {
+        throw new Error('Offline ZIP installer is unavailable.');
+      }
+      const zipPath = await api.pickOfflinePackZip();
+      if (!zipPath) {
+        return;
+      }
+      const result = await api.installOfflineResourcesFromZip(zipPath);
+      setOfflineStatus({ installed: result.installed, url: result.url, baseDir: result.baseDir });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to install offline resources from zip.';
+      setOfflineInstallError(msg);
+    } finally {
+      setIsInstallingFromZip(false);
     }
   }, []);
 
@@ -91,18 +118,34 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
               <button
                 type="button"
                 onClick={handleInstallOffline}
-                disabled={isLoading || isInstallingOffline}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip}
                 className="bg-yellow-600 text-black font-semibold py-2 px-4 rounded-md hover:bg-yellow-500 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
               >
                 {isInstallingOffline ? 'Downloading…' : 'Download Offline Pack'}
               </button>
               <button
                 type="button"
+                onClick={handleInstallOfflineFromZip}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip}
+                className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+              >
+                {isInstallingFromZip ? 'Installing…' : 'Install from ZIP'}
+              </button>
+              <button
+                type="button"
                 onClick={() => window.desktopAPI?.openExternal?.(offlineStatus.url)}
-                disabled={isLoading || isInstallingOffline}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip}
                 className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
               >
                 Open Download Link
+              </button>
+              <button
+                type="button"
+                onClick={refreshOfflineStatus}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip}
+                className="bg-gray-800 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-700 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+              >
+                Refresh
               </button>
             </div>
             {offlineInstallError && (
@@ -110,6 +153,35 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
                 {offlineInstallError}
               </div>
             )}
+          </div>
+        )}
+
+        {offlineStatus && offlineStatus.installed && (
+          <div className="p-3 rounded-md border border-green-500/30 bg-green-500/10 text-sm text-green-200 space-y-2">
+            <div>
+              Offline analysis is installed.
+              {offlineStatus.baseDir ? (
+                <span className="text-green-100/80"> Installed at: {offlineStatus.baseDir}</span>
+              ) : null}
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="button"
+                onClick={handleInstallOfflineFromZip}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip}
+                className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+              >
+                {isInstallingFromZip ? 'Installing…' : 'Reinstall from ZIP'}
+              </button>
+              <button
+                type="button"
+                onClick={refreshOfflineStatus}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip}
+                className="bg-gray-800 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-700 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+              >
+                Refresh
+              </button>
+            </div>
           </div>
         )}
 

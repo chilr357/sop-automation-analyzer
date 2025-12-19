@@ -23,6 +23,12 @@ declare global {
       // Offline pack installer (downloads from Supabase public URL and installs into userData)
       getOfflineResourcesStatus: () => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string }>;
       installOfflineResources: () => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string }>;
+
+      // Offline pack local install (user already downloaded the zip)
+      pickOfflinePackZip: () => Promise<string | null>;
+      installOfflineResourcesFromZip: (
+        zipPath: string
+      ) => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string }>;
     };
   }
 }

@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   quitAndInstallUpdate: () => ipcRenderer.invoke('update:quitAndInstall'),
   getOfflineResourcesStatus: () => ipcRenderer.invoke('offline:status'),
   installOfflineResources: () => ipcRenderer.invoke('offline:install'),
+  pickOfflinePackZip: () => ipcRenderer.invoke('dialog:pickOfflinePackZip'),
+  installOfflineResourcesFromZip: (zipPath) => ipcRenderer.invoke('offline:installFromZip', zipPath),
   openExternal: (url) => {
     if (!url || typeof url !== 'string') {
       return;

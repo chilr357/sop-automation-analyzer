@@ -4,7 +4,7 @@ const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
 const { analyzePdfAtPath } = require('./offline/offlineAnalyzer');
-const { getOfflineResourcesStatus, installOfflineResources } = require('./offline/offlineResourcesInstaller');
+const { getOfflineResourcesStatus, installOfflineResources, installOfflineResourcesFromZip } = require('./offline/offlineResourcesInstaller');
 
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -162,6 +162,11 @@ app.on('ready', () => {
     return result;
   });
 
+  ipcMain.handle('offline:installFromZip', async (_event, zipPath) => {
+    const result = await installOfflineResourcesFromZip(zipPath);
+    return result;
+  });
+
   ipcMain.handle('util:pathToFileUrl', (_event, filePath) => {
     if (!filePath || typeof filePath !== 'string') {
       return null;
@@ -189,6 +194,24 @@ app.on('ready', () => {
       name: path.basename(p),
       url: pathToFileURL(p).toString()
     }));
+  });
+
+  ipcMain.handle('dialog:pickOfflinePackZip', async () => {
+    if (!mainWindow) {
+      return null;
+    }
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Offline Pack Zip',
+      properties: ['openFile'],
+      filters: [{ name: 'Offline Pack (zip)', extensions: ['zip'] }]
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+
+    return result.filePaths[0];
   });
 
   ipcMain.handle('analysis:analyzePdfPaths', async (_event, filePaths) => {

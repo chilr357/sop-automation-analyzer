@@ -181,12 +181,51 @@ async function installOfflineResources() {
   return await getOfflineResourcesStatus();
 }
 
+async function installOfflineResourcesFromZip(zipPath) {
+  if (!zipPath || typeof zipPath !== 'string') {
+    throw new Error('Invalid zip path.');
+  }
+  if (!fs.existsSync(zipPath)) {
+    throw new Error(`Offline pack zip not found: ${zipPath}`);
+  }
+
+  const tmpBase = await fsp.mkdtemp(path.join(os.tmpdir(), 'offline-pack-'));
+  const extractDir = path.join(tmpBase, 'extract');
+
+  await extractZip(zipPath, extractDir);
+
+  const extractedResources = path.join(extractDir, 'resources');
+  if (!fs.existsSync(extractedResources)) {
+    throw new Error('Offline pack zip must contain a top-level resources/ folder.');
+  }
+
+  const userDir = getUserOfflineResourcesDir();
+  await fsp.rm(userDir, { recursive: true, force: true });
+  await fsp.mkdir(userDir, { recursive: true });
+
+  // Copy extracted resources/* -> userDir/*
+  await fsp.cp(extractedResources, userDir, { recursive: true });
+
+  // Ensure mac binaries are executable if present
+  if (process.platform !== 'win32') {
+    const maybeLlama = getExpectedPaths(userDir).llamaPath;
+    try {
+      await fsp.chmod(maybeLlama, 0o755);
+    } catch {
+      // ignore
+    }
+  }
+
+  return await getOfflineResourcesStatus();
+}
+
 module.exports = {
   DEFAULT_OFFLINE_PACK_URL,
   getOfflinePackUrl,
   getUserOfflineResourcesDir,
   getOfflineResourcesStatus,
-  installOfflineResources
+  installOfflineResources,
+  installOfflineResourcesFromZip
 };
 
 

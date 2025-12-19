@@ -1,7 +1,7 @@
 {
   "name": "sop-automation-analyzer-desktop",
   "productName": "Digital Process Automation Analyzer",
-  "version": "1.3.8",
+  "version": "1.3.9",
   "description": "Desktop wrapper for the Digital Process Automation Analyzer.",
   "author": "chilr357",
   "main": "src/main.js",
