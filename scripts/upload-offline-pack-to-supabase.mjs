@@ -44,12 +44,10 @@ async function main() {
   const stat = fs.statSync(absFile);
   if (!stat.isFile()) throw new Error(`Not a file: ${absFile}`);
 
-  const endpointBase = `${supabaseUrl}/storage/v1/object/${encodeURIComponent(bucket)}/${object
+  const endpoint = `${supabaseUrl}/storage/v1/object/${encodeURIComponent(bucket)}/${object
     .split('/')
     .map(encodeURIComponent)
     .join('/')}`;
-  // If overwrite is set, use upsert=true so existing objects are replaced.
-  const endpoint = overwrite ? `${endpointBase}?upsert=true` : endpointBase;
 
   console.log(`Uploading ${absFile} (${stat.size} bytes) -> ${endpoint}${overwrite ? ' (overwrite)' : ''}`);
 
@@ -58,7 +56,8 @@ async function main() {
     headers: {
       Authorization: `Bearer ${key}`,
       apikey: key,
-      'Content-Type': 'application/zip'
+      'Content-Type': 'application/zip',
+      ...(overwrite ? { 'x-upsert': 'true' } : {})
     },
     // Stream the file to avoid loading multi-GB into memory
     body: fs.createReadStream(absFile),
