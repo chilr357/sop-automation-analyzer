@@ -63,12 +63,45 @@ function getModelPath(resourcesBase) {
 }
 
 function extractJsonObject(text) {
-  const first = text.indexOf('{');
-  const last = text.lastIndexOf('}');
-  if (first === -1 || last === -1 || last <= first) {
+  // Common case: fenced output
+  const fenceMatch = text.match(/```json\s*([\s\S]*?)\s*```/i) || text.match(/```\s*([\s\S]*?)\s*```/);
+  const source = fenceMatch ? fenceMatch[1] : text;
+
+  // Find the first balanced JSON object starting at the first '{'
+  const start = source.indexOf('{');
+  if (start === -1) {
     throw new Error('Model output did not contain a JSON object.');
   }
-  return text.slice(first, last + 1);
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < source.length; i++) {
+    const ch = source[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') depth++;
+    if (ch === '}') depth--;
+    if (depth === 0) {
+      return source.slice(start, i + 1);
+    }
+  }
+
+  // Fall back: last brace slice (better than nothing)
+  const last = source.lastIndexOf('}');
+  if (last !== -1 && last > start) return source.slice(start, last + 1);
+  throw new Error('Model output did not contain a complete JSON object.');
 }
 
 async function runLlamaCli({ prompt }) {
@@ -158,8 +191,12 @@ async function runLlamaCli({ prompt }) {
 async function runLlamaJson({ prompt }) {
   const raw = await runLlamaCli({ prompt });
   const jsonText = extractJsonObject(raw);
-  const data = JSON.parse(jsonText);
-  return data;
+  try {
+    return JSON.parse(jsonText);
+  } catch (e) {
+    const snippet = jsonText.slice(0, 600).replace(/\s+/g, ' ').trim();
+    throw new Error(`Offline analysis returned invalid JSON (parse failed). Snippet: ${snippet}`);
+  }
 }
 
 module.exports = { runLlamaJson, getResourcesBase, getPlatformKey, getModelPath };
