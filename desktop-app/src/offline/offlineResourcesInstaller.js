@@ -71,6 +71,52 @@ function getWindowsPowerShellExe() {
   return 'powershell.exe';
 }
 
+function psQuote(value) {
+  // Single-quote for PowerShell; escape single quotes by doubling them.
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function buildWindowsDownloadWithProgressCommand(url, destPath) {
+  const uri = psQuote(url);
+  const out = psQuote(destPath);
+  // Stream download so we can compute progress + ETA without relying on PowerShell 7.
+  return [
+    "$ErrorActionPreference='Stop'",
+    `$uri=${uri}`,
+    `$out=${out}`,
+    '$req=[System.Net.HttpWebRequest]::Create($uri)',
+    "$req.Method='GET'",
+    '$resp=$req.GetResponse()',
+    '$total=$resp.ContentLength',
+    '$stream=$resp.GetResponseStream()',
+    '$fs=[System.IO.File]::Open($out,[System.IO.FileMode]::Create)',
+    '$buffer=New-Object byte[] 65536',
+    '$readTotal=0',
+    '$sw=[System.Diagnostics.Stopwatch]::StartNew()',
+    'try {',
+    '  while(($read=$stream.Read($buffer,0,$buffer.Length)) -gt 0) {',
+    '    $fs.Write($buffer,0,$read)',
+    '    $readTotal += $read',
+    '    if($total -gt 0) {',
+    '      $pct=[math]::Floor(($readTotal/$total)*100)',
+    '      $speed= if($sw.Elapsed.TotalSeconds -gt 0) { $readTotal / $sw.Elapsed.TotalSeconds } else { 0 }',
+    '      $remaining=$total-$readTotal',
+    '      $eta= if($speed -gt 0) { [math]::Round($remaining/$speed) } else { 0 }',
+    "      $status=('{0}% ({1:N1} MB / {2:N1} MB) ETA {3}s' -f $pct, ($readTotal/1MB), ($total/1MB), $eta)",
+    "      Write-Progress -Activity 'Downloading Offline Pack' -Status $status -PercentComplete $pct",
+    '    } else {',
+    "      Write-Progress -Activity 'Downloading Offline Pack' -Status ('Downloaded {0:N1} MB' -f ($readTotal/1MB))",
+    '    }',
+    '  }',
+    '} finally {',
+    "  Write-Progress -Activity 'Downloading Offline Pack' -Completed",
+    '  if($fs) { $fs.Close() }',
+    '  if($stream) { $stream.Close() }',
+    '  if($resp) { $resp.Close() }',
+    '}'
+  ].join('; ');
+}
+
 async function runWindowsPowerShell(command) {
   const ps = getWindowsPowerShellExe();
   await run(ps, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command]);
@@ -81,7 +127,7 @@ async function downloadToFile(url, destPath) {
 
   // Use curl on macOS/Linux; on Windows, use Windows PowerShell (pwsh is not always installed).
   if (process.platform === 'win32') {
-    await runWindowsPowerShell(`Invoke-WebRequest -Uri "${url}" -OutFile "${destPath}"`);
+    await runWindowsPowerShell(buildWindowsDownloadWithProgressCommand(url, destPath));
   } else {
     await run('curl', ['-L', '--fail', '--retry', '5', '--retry-delay', '2', '-o', destPath, url]);
   }
