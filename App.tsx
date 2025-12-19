@@ -12,6 +12,7 @@ const App: React.FC = () => {
   const [analysisReports, setAnalysisReports] = useState<AnalysisEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errors, setErrors] = useState<{ fileName: string; message: string }[]>([]);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
 
   const clearPreviousReports = useCallback(() => {
     setAnalysisReports((previousReports) => {
@@ -100,11 +101,29 @@ const App: React.FC = () => {
     };
   }, [analysisReports]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const info = await window.desktopAPI?.getAppInfo?.();
+        if (!cancelled && info?.version) setAppVersion(info.version);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const Header: React.FC = () => (
     <header className="text-center p-8">
       <h1 className="text-4xl font-extrabold tracking-tight text-white sm:text-5xl md:text-6xl">
         Digital Process <span className="text-brand-blue">Automation Analyzer</span>
       </h1>
+      {appVersion ? (
+        <p className="mt-2 text-sm text-brand-gray/80">v{appVersion}</p>
+      ) : null}
       <p className="mt-3 max-w-md mx-auto text-base text-brand-gray sm:text-lg md:mt-5 md:text-xl md:max-w-3xl">
         Leverage AI to analyze your Standard Operating Procedures, identify automation opportunities, and enhance operational efficiency.
       </p>
