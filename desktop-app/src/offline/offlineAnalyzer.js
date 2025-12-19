@@ -90,6 +90,21 @@ function buildPrompt({ pages, ctxSize = DEFAULT_CTX_SIZE, nPredict = DEFAULT_N_P
 
 async function analyzePdfAtPath(filePath) {
   const pages = await extractPdfPagesText(filePath);
+  const totalChars = pages.reduce((sum, p) => sum + (p.text ? p.text.length : 0), 0);
+  const nonEmptyPages = pages.reduce((sum, p) => sum + (p.text && p.text.trim().length > 0 ? 1 : 0), 0);
+
+  // If we can't extract text, the offline model is effectively "blind" (common for scanned/image PDFs).
+  // Online Gemini can still perform OCR-like understanding because it ingests the PDF directly.
+  if (nonEmptyPages === 0 || totalChars < 500) {
+    throw new Error(
+      [
+        'Offline analysis could not extract readable text from this PDF.',
+        `Extracted text: ${totalChars} characters across ${nonEmptyPages}/${pages.length} pages.`,
+        'This usually means the PDF is scanned (image-only) or otherwise has no selectable text layer.',
+        'Fix options: (1) Use Online mode for this document, or (2) run OCR to create a searchable PDF, then retry Offline mode.'
+      ].join(' ')
+    );
+  }
   const prompt = buildPrompt({ pages });
 
   const data = await runLlamaJson({ prompt });
