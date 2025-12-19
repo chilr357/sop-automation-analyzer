@@ -93,11 +93,15 @@ async function runLlamaCli({ prompt }) {
   await fsp.writeFile(promptPath, prompt, 'utf8');
 
   // NOTE: llama.cpp CLIs differ by build. We aim for common flags used by `llama-cli` / `main`.
+  //
+  // Defaults here are intentionally conservative for Windows CPU runs:
+  // - Many Llama-2-style models train at 4k context; using 8k can error unless the prompt is trimmed.
+  // - Larger ctx also increases memory usage (KV cache).
   const args = [
     '-m', modelPath,
     '-f', promptPath,
-    '--ctx-size', '8192',
-    '--n-predict', '4096',
+    '--ctx-size', '4096',
+    '--n-predict', '1536',
     '--temp', '0.2',
     '--top-p', '0.9',
     '--repeat-penalty', '1.1',
