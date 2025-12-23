@@ -104,7 +104,7 @@ function extractJsonObject(text) {
   throw new Error('Model output did not contain a complete JSON object.');
 }
 
-async function runLlamaCli({ prompt }) {
+async function runLlamaCli({ prompt, onProgress }) {
   const resourcesBase = getResourcesBase();
   const llamaBin = findLlamaBinary(resourcesBase);
   const modelPath = getModelPath(resourcesBase);
@@ -156,6 +156,22 @@ async function runLlamaCli({ prompt }) {
       env,
       stdio: ['ignore', 'pipe', 'pipe']
     });
+    let progressTimer = null;
+    const start = Date.now();
+    if (typeof onProgress === 'function') {
+      // We don't get reliable token-by-token progress from all llama.cpp builds.
+      // Provide a smooth, time-based progress ramp so the UI can show a % bar.
+      progressTimer = setInterval(() => {
+        const elapsedSec = (Date.now() - start) / 1000;
+        const expectedSec = 120; // heuristic; UI will complete when the process ends
+        const pct = 35 + Math.min(60, (elapsedSec / expectedSec) * 60); // 35%..95%
+        try {
+          onProgress({ stage: 'llama', percent: pct });
+        } catch {
+          // ignore
+        }
+      }, 1000);
+    }
     let stdout = '';
     let stderr = '';
 
@@ -168,6 +184,7 @@ async function runLlamaCli({ prompt }) {
 
     child.on('error', (err) => reject(err));
     child.on('close', (code) => {
+      if (progressTimer) clearInterval(progressTimer);
       if (code === 0) {
         return resolve(stdout);
       }
@@ -188,8 +205,8 @@ async function runLlamaCli({ prompt }) {
   });
 }
 
-async function runLlamaJson({ prompt }) {
-  const raw = await runLlamaCli({ prompt });
+async function runLlamaJson({ prompt, onProgress }) {
+  const raw = await runLlamaCli({ prompt, onProgress });
   const jsonText = extractJsonObject(raw);
   try {
     return JSON.parse(jsonText);

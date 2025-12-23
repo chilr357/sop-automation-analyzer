@@ -15,6 +15,10 @@ const App: React.FC = () => {
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<{ status: string; percent?: number; message?: string } | null>(null);
   const [updateActionMessage, setUpdateActionMessage] = useState<string | null>(null);
+  const [analysisStartTs, setAnalysisStartTs] = useState<number | null>(null);
+  const [analysisElapsedMs, setAnalysisElapsedMs] = useState<number | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState<number | null>(null);
+  const [analysisStage, setAnalysisStage] = useState<string | null>(null);
 
   const clearPreviousReports = useCallback(() => {
     setAnalysisReports((previousReports) => {
@@ -58,6 +62,10 @@ const App: React.FC = () => {
     setIsLoading(true);
     setErrors([]);
     clearPreviousReports();
+    setAnalysisStartTs(Date.now());
+    setAnalysisElapsedMs(0);
+    setAnalysisProgress(0);
+    setAnalysisStage('Starting…');
 
     try {
       const api = window.desktopAPI;
@@ -90,6 +98,7 @@ const App: React.FC = () => {
       setErrors([{ fileName: 'Offline Analysis', message: msg }]);
     } finally {
       setIsLoading(false);
+      setAnalysisStage(null);
     }
   }, [clearPreviousReports]);
 
@@ -117,6 +126,49 @@ const App: React.FC = () => {
       cancelled = true;
     };
   }, []);
+
+  React.useEffect(() => {
+    const api = window.desktopAPI;
+    if (!api?.onAnalysisProgress) return;
+    const unsubscribe = api.onAnalysisProgress((payload) => {
+      if (!payload || typeof payload !== 'object') return;
+      if (typeof payload.percent === 'number') setAnalysisProgress(payload.percent);
+      if (typeof payload.stage === 'string') {
+        const stage =
+          payload.stage === 'extract' ? 'Extracting text…' :
+          payload.stage === 'ocr' ? 'Running OCR…' :
+          payload.stage === 'prompt' ? 'Preparing prompt…' :
+          payload.stage === 'llama' ? 'Running offline model…' :
+          payload.stage === 'parse' ? 'Parsing results…' :
+          payload.stage === 'done' ? 'Done' :
+          payload.stage === 'error' ? 'Error' :
+          payload.stage;
+        setAnalysisStage(stage);
+      }
+    });
+    return () => {
+      try {
+        unsubscribe?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!isLoading || !analysisStartTs) return;
+    const t = setInterval(() => {
+      setAnalysisElapsedMs(Date.now() - analysisStartTs);
+    }, 250);
+    return () => clearInterval(t);
+  }, [isLoading, analysisStartTs]);
+
+  React.useEffect(() => {
+    if (!isLoading && analysisStartTs) {
+      setAnalysisElapsedMs(Date.now() - analysisStartTs);
+      setAnalysisStartTs(null);
+    }
+  }, [isLoading, analysisStartTs]);
 
   React.useEffect(() => {
     const api = window.desktopAPI;
@@ -244,7 +296,13 @@ const App: React.FC = () => {
       <main className="container mx-auto">
         <Header />
         {window.desktopAPI?.pickPdfFiles ? (
-          <DesktopFilePicker onAnalyzePaths={handleAnalyzeDesktop} isLoading={isLoading} />
+          <DesktopFilePicker
+            onAnalyzePaths={handleAnalyzeDesktop}
+            isLoading={isLoading}
+            analysisElapsedMs={analysisElapsedMs}
+            analysisProgress={analysisProgress}
+            analysisStage={analysisStage}
+          />
         ) : (
           <FileUpload onAnalyze={handleAnalyze} isLoading={isLoading} />
         )}

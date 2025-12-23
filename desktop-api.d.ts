@@ -14,6 +14,9 @@ declare global {
       analyzePdfPaths: (
         filePaths: string[]
       ) => Promise<Array<{ ok: true; filePath: string; report: AnalysisReport } | { ok: false; filePath: string; error: string }>>;
+      onAnalysisProgress: (
+        callback: (payload: { filePath: string; index: number; total: number; stage: string; percent?: number; message?: string; pageNumber?: number; totalPages?: number }) => void
+      ) => () => void;
       pathToFileUrl: (filePath: string) => Promise<string | null>;
 
       // Auto-updater
@@ -24,6 +27,9 @@ declare global {
       // Offline pack installer (downloads from Supabase public URL and installs into userData)
       getOfflineResourcesStatus: () => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string }>;
       installOfflineResources: () => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string }>;
+      checkOfflinePackUpdates: () => Promise<{ ok: boolean; message?: string; installedVersion?: string | null; remoteVersion?: string | null; updateAvailable?: boolean; toUpdate?: Array<{ name: string; url: string; version?: string | null }> }>;
+      installOfflinePackUpdate: () => Promise<{ ok: boolean; message?: string } & Record<string, unknown>>;
+      onOfflinePackUpdateStatus: (callback: (payload: { status: string; component?: string; index?: number; total?: number; percent?: number; message?: string }) => void) => () => void;
 
       // Offline pack local install (user already downloaded the zip)
       pickOfflinePackZip: () => Promise<string | null>;

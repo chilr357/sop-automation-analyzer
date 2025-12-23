@@ -89,8 +89,27 @@ function buildPrompt({ pages, ctxSize = DEFAULT_CTX_SIZE, nPredict = DEFAULT_N_P
   return `${head}\n\n[TRUNCATED TO FIT CONTEXT]\n\n${tail}`;
 }
 
-async function analyzePdfAtPath(filePath) {
-  let pages = await extractPdfPagesText(filePath);
+async function analyzePdfAtPath(filePath, opts = {}) {
+  const { onProgress } = opts;
+  const emit = (payload) => {
+    if (typeof onProgress === 'function') {
+      try {
+        onProgress(payload);
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  emit({ stage: 'start', percent: 0 });
+
+  let pages = await extractPdfPagesText(filePath, {
+    onProgress: ({ pageNumber, totalPages }) => {
+      // Extraction: 0%..30%
+      const pct = 2 + (pageNumber / Math.max(1, totalPages)) * 28;
+      emit({ stage: 'extract', percent: pct, pageNumber, totalPages });
+    }
+  });
   let totalChars = pages.reduce((sum, p) => sum + (p.text ? p.text.length : 0), 0);
   let nonEmptyPages = pages.reduce((sum, p) => sum + (p.text && p.text.trim().length > 0 ? 1 : 0), 0);
 
@@ -98,11 +117,18 @@ async function analyzePdfAtPath(filePath) {
   // Online Gemini can still perform OCR-like understanding because it ingests the PDF directly.
   if (nonEmptyPages === 0 || totalChars < 500) {
     // Best-effort OCR fallback if user has `ocrmypdf` installed.
+    emit({ stage: 'ocr', percent: 30 });
     const ocrAvailable = await hasOcrMyPdf();
     if (ocrAvailable) {
       const ocrPdfPath = await ocrToSearchablePdfBestEffort(filePath);
       if (ocrPdfPath) {
-        pages = await extractPdfPagesText(ocrPdfPath);
+        pages = await extractPdfPagesText(ocrPdfPath, {
+          onProgress: ({ pageNumber, totalPages }) => {
+            // OCR re-extract: 30%..35%
+            const pct = 30 + (pageNumber / Math.max(1, totalPages)) * 5;
+            emit({ stage: 'extract', percent: pct, pageNumber, totalPages });
+          }
+        });
         totalChars = pages.reduce((sum, p) => sum + (p.text ? p.text.length : 0), 0);
         nonEmptyPages = pages.reduce((sum, p) => sum + (p.text && p.text.trim().length > 0 ? 1 : 0), 0);
       }
@@ -126,13 +152,23 @@ async function analyzePdfAtPath(filePath) {
       throw new Error(base.concat(next).join(' '));
     }
   }
+  emit({ stage: 'prompt', percent: 35 });
   const prompt = buildPrompt({ pages });
 
-  const data = await runLlamaJson({ prompt });
+  emit({ stage: 'llama', percent: 35 });
+  const data = await runLlamaJson({
+    prompt,
+    onProgress: (p) => {
+      // llamaRunner already emits 35..95
+      emit(p);
+    }
+  });
+  emit({ stage: 'parse', percent: 95 });
   const parsed = AnalysisReportSchema.safeParse(data);
   if (!parsed.success) {
     throw new Error(`Offline analysis produced invalid JSON schema: ${parsed.error.message}`);
   }
+  emit({ stage: 'done', percent: 100 });
   return parsed.data;
 }
 

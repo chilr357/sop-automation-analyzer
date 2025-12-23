@@ -4,7 +4,13 @@ const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
 const { analyzePdfAtPath } = require('./offline/offlineAnalyzer');
-const { getOfflineResourcesStatus, installOfflineResources, installOfflineResourcesFromZip } = require('./offline/offlineResourcesInstaller');
+const {
+  getOfflineResourcesStatus,
+  installOfflineResources,
+  installOfflineResourcesFromZip,
+  checkOfflinePackUpdates,
+  updateOfflineResources
+} = require('./offline/offlineResourcesInstaller');
 
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -208,6 +214,31 @@ app.on('ready', () => {
     return result;
   });
 
+  ipcMain.handle('offline:updateCheck', async () => {
+    return await checkOfflinePackUpdates();
+  });
+
+  ipcMain.handle('offline:updateInstall', async () => {
+    const send = (payload) => {
+      try {
+        mainWindow?.webContents.send('offline:updateStatus', payload);
+      } catch {
+        // ignore
+      }
+    };
+    try {
+      send({ status: 'checking' });
+      const result = await updateOfflineResources({
+        onStatus: (p) => send(p)
+      });
+      return result;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      send({ status: 'error', message });
+      return { ok: false, message };
+    }
+  });
+
   ipcMain.handle('util:pathToFileUrl', (_event, filePath) => {
     if (!filePath || typeof filePath !== 'string') {
       return null;
@@ -260,24 +291,37 @@ app.on('ready', () => {
       throw new Error('Invalid request: filePaths must be an array of strings.');
     }
 
-    const results = await Promise.allSettled(
-      filePaths.map(async (filePath) => {
-        if (typeof filePath !== 'string' || filePath.length === 0) {
-          throw new Error('Invalid file path.');
-        }
-        const report = await analyzePdfAtPath(filePath);
-        return { filePath, report };
-      })
-    );
-
-    return results.map((r, index) => {
-      const filePath = filePaths[index];
-      if (r.status === 'fulfilled') {
-        return { ok: true, filePath, report: r.value.report };
+    const sendProgress = (payload) => {
+      try {
+        mainWindow?.webContents.send('analysis:progress', payload);
+      } catch {
+        // ignore
       }
-      const message = r.reason instanceof Error ? r.reason.message : 'An unexpected error occurred.';
-      return { ok: false, filePath, error: message };
-    });
+    };
+
+    const results = [];
+    for (let i = 0; i < filePaths.length; i++) {
+      const filePath = filePaths[i];
+      if (typeof filePath !== 'string' || filePath.length === 0) {
+        results.push({ ok: false, filePath, error: 'Invalid file path.' });
+        continue;
+      }
+      try {
+        sendProgress({ filePath, index: i + 1, total: filePaths.length, stage: 'start', percent: 0 });
+        const report = await analyzePdfAtPath(filePath, {
+          onProgress: (p) => {
+            sendProgress({ filePath, index: i + 1, total: filePaths.length, ...p });
+          }
+        });
+        results.push({ ok: true, filePath, report });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'An unexpected error occurred.';
+        results.push({ ok: false, filePath, error: message });
+        sendProgress({ filePath, index: i + 1, total: filePaths.length, stage: 'error', percent: 100, message });
+      }
+    }
+
+    return results;
   });
 
   app.on('activate', () => {

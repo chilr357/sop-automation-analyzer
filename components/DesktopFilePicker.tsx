@@ -6,15 +6,22 @@ export type DesktopPickedFile = { path: string; name: string; url: string };
 interface DesktopFilePickerProps {
   isLoading: boolean;
   onAnalyzePaths: (files: DesktopPickedFile[]) => void;
+  analysisElapsedMs?: number | null;
+  analysisProgress?: number | null;
+  analysisStage?: string | null;
 }
 
-export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading, onAnalyzePaths }) => {
+export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading, onAnalyzePaths, analysisElapsedMs, analysisProgress, analysisStage }) => {
   const [selectedFiles, setSelectedFiles] = useState<DesktopPickedFile[]>([]);
   const [pickError, setPickError] = useState<string | null>(null);
   const [offlineStatus, setOfflineStatus] = useState<{ installed: boolean; url: string; baseDir?: string } | null>(null);
   const [offlineInstallError, setOfflineInstallError] = useState<string | null>(null);
   const [isInstallingOffline, setIsInstallingOffline] = useState(false);
   const [isInstallingFromZip, setIsInstallingFromZip] = useState(false);
+  const [offlineUpdateInfo, setOfflineUpdateInfo] = useState<{ installedVersion?: string | null; remoteVersion?: string | null; updateAvailable?: boolean } | null>(null);
+  const [offlineUpdateStatus, setOfflineUpdateStatus] = useState<{ status: string; component?: string; percent?: number; message?: string } | null>(null);
+  const [isCheckingOfflineUpdate, setIsCheckingOfflineUpdate] = useState(false);
+  const [isUpdatingOfflinePack, setIsUpdatingOfflinePack] = useState(false);
 
   const refreshOfflineStatus = useCallback(async () => {
     let cancelled = false;
@@ -36,6 +43,23 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
   React.useEffect(() => {
     void refreshOfflineStatus();
   }, [refreshOfflineStatus]);
+
+  React.useEffect(() => {
+    const api = window.desktopAPI;
+    if (!api?.onOfflinePackUpdateStatus) return;
+    const unsub = api.onOfflinePackUpdateStatus((payload) => {
+      if (payload && typeof payload === 'object' && typeof payload.status === 'string') {
+        setOfflineUpdateStatus(payload);
+      }
+    });
+    return () => {
+      try {
+        unsub?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
 
   const handlePick = useCallback(async () => {
     setPickError(null);
@@ -91,6 +115,53 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
       setIsInstallingFromZip(false);
     }
   }, []);
+
+  const handleCheckOfflinePackUpdates = useCallback(async () => {
+    setOfflineInstallError(null);
+    setIsCheckingOfflineUpdate(true);
+    try {
+      const api = window.desktopAPI;
+      if (!api?.checkOfflinePackUpdates) {
+        throw new Error('Offline pack updater is unavailable.');
+      }
+      const res = await api.checkOfflinePackUpdates();
+      if (!res?.ok) {
+        throw new Error(res?.message || 'Failed to check offline pack updates.');
+      }
+      setOfflineUpdateInfo({
+        installedVersion: res.installedVersion ?? null,
+        remoteVersion: res.remoteVersion ?? null,
+        updateAvailable: !!res.updateAvailable
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to check offline pack updates.';
+      setOfflineInstallError(msg);
+    } finally {
+      setIsCheckingOfflineUpdate(false);
+    }
+  }, []);
+
+  const handleUpdateOfflinePack = useCallback(async () => {
+    setOfflineInstallError(null);
+    setIsUpdatingOfflinePack(true);
+    try {
+      const api = window.desktopAPI;
+      if (!api?.installOfflinePackUpdate) {
+        throw new Error('Offline pack updater is unavailable.');
+      }
+      const res = await api.installOfflinePackUpdate();
+      if (!res?.ok) {
+        throw new Error(res?.message || 'Failed to update offline pack.');
+      }
+      await refreshOfflineStatus();
+      await handleCheckOfflinePackUpdates();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to update offline pack.';
+      setOfflineInstallError(msg);
+    } finally {
+      setIsUpdatingOfflinePack(false);
+    }
+  }, [refreshOfflineStatus, handleCheckOfflinePackUpdates]);
 
   const handleAnalyzeClick = () => {
     if (selectedFiles.length > 0) {
@@ -164,6 +235,18 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
                 <span className="text-green-100/80"> Installed at: {offlineStatus.baseDir}</span>
               ) : null}
             </div>
+            <div className="text-green-100/80">
+              Offline pack updates:
+              {offlineUpdateInfo?.installedVersion ? (
+                <span> current {offlineUpdateInfo.installedVersion}</span>
+              ) : (
+                <span> current (unknown)</span>
+              )}
+              {offlineUpdateInfo?.remoteVersion ? (
+                <span>, latest {offlineUpdateInfo.remoteVersion}</span>
+              ) : null}
+              {offlineUpdateInfo?.updateAvailable ? <span className="text-yellow-200"> (update available)</span> : null}
+            </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <button
                 type="button"
@@ -175,6 +258,22 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
               </button>
               <button
                 type="button"
+                onClick={handleCheckOfflinePackUpdates}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip || isCheckingOfflineUpdate || isUpdatingOfflinePack}
+                className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+              >
+                {isCheckingOfflineUpdate ? 'Checking…' : 'Check Offline Pack Updates'}
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateOfflinePack}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip || isUpdatingOfflinePack || !offlineUpdateInfo?.updateAvailable}
+                className="bg-yellow-600 text-black font-semibold py-2 px-4 rounded-md hover:bg-yellow-500 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+              >
+                {isUpdatingOfflinePack ? 'Updating…' : 'Update Offline Pack'}
+              </button>
+              <button
+                type="button"
                 onClick={refreshOfflineStatus}
                 disabled={isLoading || isInstallingOffline || isInstallingFromZip}
                 className="bg-gray-800 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-700 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
@@ -182,6 +281,19 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
                 Refresh
               </button>
             </div>
+            {offlineUpdateStatus?.status ? (
+              <div className="text-xs text-green-100/80">
+                {offlineUpdateStatus.status === 'downloading'
+                  ? `Updating: downloading ${offlineUpdateStatus.component || ''} ${typeof offlineUpdateStatus.percent === 'number' ? `${offlineUpdateStatus.percent.toFixed(0)}%` : ''}`
+                  : offlineUpdateStatus.status === 'extracting'
+                    ? `Updating: installing ${offlineUpdateStatus.component || ''}`
+                    : offlineUpdateStatus.status === 'done'
+                      ? 'Offline pack update complete.'
+                      : offlineUpdateStatus.status === 'error'
+                        ? `Offline pack update error: ${offlineUpdateStatus.message || 'Unknown'}`
+                        : `Offline pack update: ${offlineUpdateStatus.status}`}
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -234,6 +346,37 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
       >
         {isLoading ? 'Analyzing...' : `Analyze ${selectedFiles.length} Document(s)`}
       </button>
+
+      {(isLoading || (analysisElapsedMs != null && !isLoading)) ? (
+        <div className="mt-3 text-center text-sm text-brand-gray space-y-2">
+          <div>
+            {isLoading ? 'Elapsed:' : 'Completed in:'}{' '}
+            <span className="text-white">
+              {(() => {
+                const ms = Math.max(0, analysisElapsedMs || 0);
+                const totalSec = Math.floor(ms / 1000);
+                const m = Math.floor(totalSec / 60);
+                const s = totalSec % 60;
+                return `${m}:${String(s).padStart(2, '0')}`;
+              })()}
+            </span>
+          </div>
+          {isLoading ? (
+            <div className="w-full">
+              <div className="h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-2 bg-brand-blue transition-all duration-300"
+                  style={{ width: `${Math.max(0, Math.min(100, analysisProgress ?? 0))}%` }}
+                />
+              </div>
+              <div className="mt-1 text-xs text-brand-gray/80">
+                {analysisStage ? `Status: ${analysisStage}` : 'Status: working…'}
+                {typeof analysisProgress === 'number' ? ` (${analysisProgress.toFixed(0)}%)` : ''}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 };

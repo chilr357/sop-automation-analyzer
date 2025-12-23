@@ -7,7 +7,8 @@ const fs = require('node:fs/promises');
  * @param {string} filePath
  * @returns {Promise<Array<{pageNumber: number, text: string}>>}
  */
-async function extractPdfPagesText(filePath) {
+async function extractPdfPagesText(filePath, opts = {}) {
+  const { onProgress } = opts;
   const data = await fs.readFile(filePath);
   // pdfjs expects Uint8Array for binary input (Node's Buffer can break on some platforms/runtimes).
   const uint8 = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
@@ -23,6 +24,13 @@ async function extractPdfPagesText(filePath) {
 
   const pages = [];
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+    if (typeof onProgress === 'function') {
+      try {
+        onProgress({ stage: 'extract', pageNumber, totalPages: pdf.numPages });
+      } catch {
+        // ignore
+      }
+    }
     const page = await pdf.getPage(pageNumber);
     const content = await page.getTextContent();
     const text = (content.items || [])
