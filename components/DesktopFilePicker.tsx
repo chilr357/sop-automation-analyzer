@@ -18,6 +18,7 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
   const [offlineUpdateInfo, setOfflineUpdateInfo] = useState<{ installedVersion?: string | null; latestVersion?: string | null; needsUpdate?: boolean; message?: string } | null>(null);
   const [offlineUpdateStatus, setOfflineUpdateStatus] = useState<{ status: string; percent?: number; component?: string; message?: string } | null>(null);
   const [isUpdatingOffline, setIsUpdatingOffline] = useState(false);
+  const [ocrTools, setOcrTools] = useState<{ available: boolean; installUrl: string } | null>(null);
 
   const refreshOfflineStatus = useCallback(async () => {
     let cancelled = false;
@@ -39,6 +40,24 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
   React.useEffect(() => {
     void refreshOfflineStatus();
   }, [refreshOfflineStatus]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await window.desktopAPI?.getOcrToolsStatus?.();
+        if (cancelled) return;
+        if (res?.ok && typeof res.available === 'boolean' && typeof res.installUrl === 'string') {
+          setOcrTools({ available: res.available, installUrl: res.installUrl });
+        }
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     const api = window.desktopAPI;
@@ -224,6 +243,21 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
                 <span className="text-green-100/80"> Installed at: {offlineStatus.baseDir}</span>
               ) : null}
             </div>
+            {ocrTools && !ocrTools.available ? (
+              <div className="text-green-100/80">
+                OCR tools: <span className="text-yellow-200">not installed</span>. Scanned/image PDFs may fail in Offline mode.
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => window.desktopAPI?.openExternal?.(ocrTools.installUrl)}
+                    disabled={isLoading}
+                    className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                  >
+                    Install OCR Tools
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className="flex flex-col sm:flex-row gap-2">
               <button
                 type="button"

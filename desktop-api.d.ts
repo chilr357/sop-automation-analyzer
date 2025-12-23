@@ -28,6 +28,7 @@ declare global {
       checkOfflinePackUpdate: () => Promise<{ ok: boolean; message?: string; installedVersion?: string | null; latestVersion?: string | null; needsUpdate?: boolean; componentsToUpdate?: string[] }>;
       updateOfflinePack: () => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string; manifestUrl?: string; installedPackVersion?: string | null; ocrAvailable?: boolean; updated?: boolean; latestVersion?: string | null }>;
       onOfflineUpdateStatus: (callback: (payload: { status: string; percent?: number; component?: string; message?: string }) => void) => () => void;
+      getOcrToolsStatus: () => Promise<{ ok: boolean; available: boolean; installUrl: string; message?: string }>;
 
       // Offline pack local install (user already downloaded the zip)
       pickOfflinePackZip: () => Promise<string | null>;

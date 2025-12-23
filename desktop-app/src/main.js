@@ -11,6 +11,7 @@ const {
   checkOfflinePackUpdate,
   updateOfflineResources
 } = require('./offline/offlineResourcesInstaller');
+const { hasOcrMyPdf } = require('./offline/ocrRunner');
 
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -231,6 +232,16 @@ app.on('ready', () => {
   ipcMain.handle('offline:installFromZip', async (_event, zipPath) => {
     const result = await installOfflineResourcesFromZip(zipPath);
     return result;
+  });
+
+  ipcMain.handle('offline:ocrToolsStatus', async () => {
+    const installUrl = 'https://ocrmypdf.readthedocs.io/en/latest/installation.html';
+    try {
+      const available = await hasOcrMyPdf();
+      return { ok: true, available, installUrl };
+    } catch (e) {
+      return { ok: false, available: false, installUrl, message: e instanceof Error ? e.message : String(e) };
+    }
   });
 
   ipcMain.handle('util:pathToFileUrl', (_event, filePath) => {

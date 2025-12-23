@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   installOfflineResources: () => ipcRenderer.invoke('offline:install'),
   checkOfflinePackUpdate: () => ipcRenderer.invoke('offline:checkUpdate'),
   updateOfflinePack: () => ipcRenderer.invoke('offline:update'),
+  getOcrToolsStatus: () => ipcRenderer.invoke('offline:ocrToolsStatus'),
   onOfflineUpdateStatus: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const handler = (_event, payload) => {

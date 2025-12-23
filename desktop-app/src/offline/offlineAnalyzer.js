@@ -145,7 +145,8 @@ async function analyzePdfAtPath(filePath, { onProgress } = {}) {
           ]
         : [
             'Fix options: (1) Use Online mode for this document, or (2) install an OCR tool and retry.',
-            'To enable automatic offline OCR fallback, install `ocrmypdf` and ensure it is on PATH, then retry.'
+            'To enable automatic offline OCR fallback, install `ocrmypdf` and ensure it is on PATH, then retry.',
+            'Install guide: https://ocrmypdf.readthedocs.io/en/latest/installation.html'
           ];
       throw new Error(base.concat(next).join(' '));
     }
