@@ -8,6 +8,18 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   getStartUrl: () => ipcRenderer.invoke('app:getStartUrl'),
   pickPdfFiles: () => ipcRenderer.invoke('dialog:pickPdfFiles'),
   analyzePdfPaths: (filePaths) => ipcRenderer.invoke('analysis:analyzePdfPaths', filePaths),
+  onAnalysisProgress: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const handler = (_event, payload) => {
+      try {
+        callback(payload);
+      } catch {
+        // ignore
+      }
+    };
+    ipcRenderer.on('analysis:progress', handler);
+    return () => ipcRenderer.removeListener('analysis:progress', handler);
+  },
   pathToFileUrl: (filePath) => ipcRenderer.invoke('util:pathToFileUrl', filePath),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   quitAndInstallUpdate: () => ipcRenderer.invoke('update:quitAndInstall'),
@@ -25,6 +37,20 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   },
   getOfflineResourcesStatus: () => ipcRenderer.invoke('offline:status'),
   installOfflineResources: () => ipcRenderer.invoke('offline:install'),
+  checkOfflinePackUpdate: () => ipcRenderer.invoke('offline:checkUpdate'),
+  updateOfflinePack: () => ipcRenderer.invoke('offline:update'),
+  onOfflineUpdateStatus: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const handler = (_event, payload) => {
+      try {
+        callback(payload);
+      } catch {
+        // ignore
+      }
+    };
+    ipcRenderer.on('offline:updateStatus', handler);
+    return () => ipcRenderer.removeListener('offline:updateStatus', handler);
+  },
   pickOfflinePackZip: () => ipcRenderer.invoke('dialog:pickOfflinePackZip'),
   installOfflineResourcesFromZip: (zipPath) => ipcRenderer.invoke('offline:installFromZip', zipPath),
   openExternal: (url) => {

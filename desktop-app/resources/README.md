@@ -13,3 +13,5 @@ These files are intentionally **gitignored** (they can be multiple GB).
 The Electron main process looks for these paths at runtime and will show a clear error if they are missing.
 
 
+
+

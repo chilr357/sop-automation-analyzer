@@ -89,8 +89,25 @@ function buildPrompt({ pages, ctxSize = DEFAULT_CTX_SIZE, nPredict = DEFAULT_N_P
   return `${head}\n\n[TRUNCATED TO FIT CONTEXT]\n\n${tail}`;
 }
 
-async function analyzePdfAtPath(filePath) {
-  let pages = await extractPdfPagesText(filePath);
+async function analyzePdfAtPath(filePath, { onProgress } = {}) {
+  const emit = (payload) => {
+    if (!onProgress) return;
+    try {
+      onProgress(payload);
+    } catch {
+      // ignore
+    }
+  };
+
+  emit({ stage: 'starting', percent: 0 });
+
+  let pages = await extractPdfPagesText(filePath, {
+    onProgress: ({ stage, pageNumber, totalPages }) => {
+      if (stage !== 'extracting') return;
+      const pct = totalPages ? Math.round((pageNumber / totalPages) * 30) : 0; // 0..30
+      emit({ stage: 'extracting', percent: pct, pageNumber, totalPages });
+    }
+  });
   let totalChars = pages.reduce((sum, p) => sum + (p.text ? p.text.length : 0), 0);
   let nonEmptyPages = pages.reduce((sum, p) => sum + (p.text && p.text.trim().length > 0 ? 1 : 0), 0);
 
@@ -100,9 +117,16 @@ async function analyzePdfAtPath(filePath) {
     // Best-effort OCR fallback if user has `ocrmypdf` installed.
     const ocrAvailable = await hasOcrMyPdf();
     if (ocrAvailable) {
+      emit({ stage: 'ocr', percent: 35, message: 'Running OCR…' });
       const ocrPdfPath = await ocrToSearchablePdfBestEffort(filePath);
       if (ocrPdfPath) {
-        pages = await extractPdfPagesText(ocrPdfPath);
+        pages = await extractPdfPagesText(ocrPdfPath, {
+          onProgress: ({ stage, pageNumber, totalPages }) => {
+            if (stage !== 'extracting') return;
+            const pct = 35 + (totalPages ? Math.round((pageNumber / totalPages) * 15) : 0); // 35..50
+            emit({ stage: 'extracting', percent: pct, pageNumber, totalPages, message: 'Extracting OCR text…' });
+          }
+        });
         totalChars = pages.reduce((sum, p) => sum + (p.text ? p.text.length : 0), 0);
         nonEmptyPages = pages.reduce((sum, p) => sum + (p.text && p.text.trim().length > 0 ? 1 : 0), 0);
       }
@@ -126,13 +150,25 @@ async function analyzePdfAtPath(filePath) {
       throw new Error(base.concat(next).join(' '));
     }
   }
+  emit({ stage: 'prompt', percent: 55, message: 'Building prompt…' });
   const prompt = buildPrompt({ pages });
 
-  const data = await runLlamaJson({ prompt });
+  emit({ stage: 'model', percent: 60, message: 'Running local model…' });
+  const data = await runLlamaJson({
+    prompt,
+    onProgress: (p) => {
+      // Map model progress (0..99) into 60..95
+      const modelPct = typeof p?.percent === 'number' ? p.percent : 0;
+      const pct = 60 + Math.round((Math.max(0, Math.min(99, modelPct)) / 100) * 35);
+      emit({ stage: 'model', percent: Math.min(95, pct), tokens: p.tokens, targetTokens: p.targetTokens });
+    }
+  });
+  emit({ stage: 'parsing', percent: 96, message: 'Validating output…' });
   const parsed = AnalysisReportSchema.safeParse(data);
   if (!parsed.success) {
     throw new Error(`Offline analysis produced invalid JSON schema: ${parsed.error.message}`);
   }
+  emit({ stage: 'done', percent: 100 });
   return parsed.data;
 }
 

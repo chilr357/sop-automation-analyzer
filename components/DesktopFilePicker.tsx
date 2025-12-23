@@ -15,6 +15,9 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
   const [offlineInstallError, setOfflineInstallError] = useState<string | null>(null);
   const [isInstallingOffline, setIsInstallingOffline] = useState(false);
   const [isInstallingFromZip, setIsInstallingFromZip] = useState(false);
+  const [offlineUpdateInfo, setOfflineUpdateInfo] = useState<{ installedVersion?: string | null; latestVersion?: string | null; needsUpdate?: boolean; message?: string } | null>(null);
+  const [offlineUpdateStatus, setOfflineUpdateStatus] = useState<{ status: string; percent?: number; component?: string; message?: string } | null>(null);
+  const [isUpdatingOffline, setIsUpdatingOffline] = useState(false);
 
   const refreshOfflineStatus = useCallback(async () => {
     let cancelled = false;
@@ -36,6 +39,63 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
   React.useEffect(() => {
     void refreshOfflineStatus();
   }, [refreshOfflineStatus]);
+
+  React.useEffect(() => {
+    const api = window.desktopAPI;
+    if (!api?.onOfflineUpdateStatus) return;
+    const unsubscribe = api.onOfflineUpdateStatus((payload) => {
+      if (payload && typeof payload === 'object' && typeof payload.status === 'string') {
+        setOfflineUpdateStatus(payload);
+      }
+    });
+    return () => {
+      try {
+        unsubscribe?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  const handleCheckOfflineUpdate = useCallback(async () => {
+    setOfflineInstallError(null);
+    setOfflineUpdateInfo(null);
+    try {
+      const api = window.desktopAPI;
+      if (!api?.checkOfflinePackUpdate) {
+        throw new Error('Offline pack updater is unavailable.');
+      }
+      const res = await api.checkOfflinePackUpdate();
+      setOfflineUpdateInfo({
+        installedVersion: res.installedVersion ?? null,
+        latestVersion: res.latestVersion ?? null,
+        needsUpdate: !!res.needsUpdate,
+        message: res.message
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to check offline pack update.';
+      setOfflineInstallError(msg);
+    }
+  }, []);
+
+  const handleUpdateOfflinePack = useCallback(async () => {
+    setOfflineInstallError(null);
+    setIsUpdatingOffline(true);
+    try {
+      const api = window.desktopAPI;
+      if (!api?.updateOfflinePack) {
+        throw new Error('Offline pack updater is unavailable.');
+      }
+      await api.updateOfflinePack();
+      await refreshOfflineStatus();
+      await handleCheckOfflineUpdate();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to update offline pack.';
+      setOfflineInstallError(msg);
+    } finally {
+      setIsUpdatingOffline(false);
+    }
+  }, [handleCheckOfflineUpdate, refreshOfflineStatus]);
 
   const handlePick = useCallback(async () => {
     setPickError(null);
@@ -168,20 +228,56 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
               <button
                 type="button"
                 onClick={handleInstallOfflineFromZip}
-                disabled={isLoading || isInstallingOffline || isInstallingFromZip}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip || isUpdatingOffline}
                 className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
               >
                 {isInstallingFromZip ? 'Installing…' : 'Reinstall from ZIP'}
               </button>
               <button
                 type="button"
+                onClick={handleCheckOfflineUpdate}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip || isUpdatingOffline}
+                className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+              >
+                Check Offline Pack Update
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateOfflinePack}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip || isUpdatingOffline || offlineUpdateInfo?.needsUpdate === false}
+                className="bg-green-600 text-black font-semibold py-2 px-4 rounded-md hover:bg-green-500 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+              >
+                {isUpdatingOffline ? 'Updating…' : 'Update Offline Pack'}
+              </button>
+              <button
+                type="button"
                 onClick={refreshOfflineStatus}
-                disabled={isLoading || isInstallingOffline || isInstallingFromZip}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip || isUpdatingOffline}
                 className="bg-gray-800 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-700 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
               >
                 Refresh
               </button>
             </div>
+            {offlineUpdateInfo ? (
+              <div className="text-green-100/80">
+                Installed pack: {offlineUpdateInfo.installedVersion || 'unknown'} · Latest: {offlineUpdateInfo.latestVersion || 'unknown'}
+                {offlineUpdateInfo.needsUpdate === false ? ' · Up to date' : ''}
+                {offlineUpdateInfo.message ? <div>{offlineUpdateInfo.message}</div> : null}
+              </div>
+            ) : null}
+            {offlineUpdateStatus?.status === 'downloading' || offlineUpdateStatus?.status === 'installing' ? (
+              <div className="text-green-100/80">
+                {offlineUpdateStatus.message || `${offlineUpdateStatus.status}…`}
+                {typeof offlineUpdateStatus.percent === 'number' ? (
+                  <div className="mt-2 w-full bg-black/30 rounded h-2 overflow-hidden">
+                    <div
+                      className="h-2 bg-green-400"
+                      style={{ width: `${Math.max(0, Math.min(100, offlineUpdateStatus.percent))}%` }}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         )}
 
