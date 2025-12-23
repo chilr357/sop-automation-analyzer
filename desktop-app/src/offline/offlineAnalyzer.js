@@ -1,6 +1,7 @@
 const { AnalysisReportSchema } = require('./reportSchema');
 const { extractPdfPagesText } = require('./pdfTextExtractor');
 const { runLlamaJson } = require('./llamaRunner');
+const { ocrToSearchablePdfBestEffort, hasOcrMyPdf } = require('./ocrRunner');
 
 // We must keep the prompt within the model context window.
 // We don't have an exact tokenizer here, so we use a conservative chars->tokens estimate.
@@ -89,21 +90,41 @@ function buildPrompt({ pages, ctxSize = DEFAULT_CTX_SIZE, nPredict = DEFAULT_N_P
 }
 
 async function analyzePdfAtPath(filePath) {
-  const pages = await extractPdfPagesText(filePath);
-  const totalChars = pages.reduce((sum, p) => sum + (p.text ? p.text.length : 0), 0);
-  const nonEmptyPages = pages.reduce((sum, p) => sum + (p.text && p.text.trim().length > 0 ? 1 : 0), 0);
+  let pages = await extractPdfPagesText(filePath);
+  let totalChars = pages.reduce((sum, p) => sum + (p.text ? p.text.length : 0), 0);
+  let nonEmptyPages = pages.reduce((sum, p) => sum + (p.text && p.text.trim().length > 0 ? 1 : 0), 0);
 
   // If we can't extract text, the offline model is effectively "blind" (common for scanned/image PDFs).
   // Online Gemini can still perform OCR-like understanding because it ingests the PDF directly.
   if (nonEmptyPages === 0 || totalChars < 500) {
-    throw new Error(
-      [
+    // Best-effort OCR fallback if user has `ocrmypdf` installed.
+    const ocrAvailable = await hasOcrMyPdf();
+    if (ocrAvailable) {
+      const ocrPdfPath = await ocrToSearchablePdfBestEffort(filePath);
+      if (ocrPdfPath) {
+        pages = await extractPdfPagesText(ocrPdfPath);
+        totalChars = pages.reduce((sum, p) => sum + (p.text ? p.text.length : 0), 0);
+        nonEmptyPages = pages.reduce((sum, p) => sum + (p.text && p.text.trim().length > 0 ? 1 : 0), 0);
+      }
+    }
+
+    if (nonEmptyPages === 0 || totalChars < 500) {
+      const base = [
         'Offline analysis could not extract readable text from this PDF.',
         `Extracted text: ${totalChars} characters across ${nonEmptyPages}/${pages.length} pages.`,
-        'This usually means the PDF is scanned (image-only) or otherwise has no selectable text layer.',
-        'Fix options: (1) Use Online mode for this document, or (2) run OCR to create a searchable PDF, then retry Offline mode.'
-      ].join(' ')
-    );
+        'This usually means the PDF is scanned (image-only) or otherwise has no selectable text layer.'
+      ];
+      const next = ocrAvailable
+        ? [
+            'An OCR attempt was made using `ocrmypdf`, but the resulting text was still too small.',
+            'Fix options: (1) Use Online mode for this document, or (2) run OCR externally to create a searchable PDF, then retry Offline mode.'
+          ]
+        : [
+            'Fix options: (1) Use Online mode for this document, or (2) install an OCR tool and retry.',
+            'To enable automatic offline OCR fallback, install `ocrmypdf` and ensure it is on PATH, then retry.'
+          ];
+      throw new Error(base.concat(next).join(' '));
+    }
   }
   const prompt = buildPrompt({ pages });
 
