@@ -5,6 +5,7 @@ const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
 const { analyzePdfAtPath } = require('./offline/offlineAnalyzer');
 const { getOfflineResourcesStatus, installOfflineResources, installOfflineResourcesFromZip } = require('./offline/offlineResourcesInstaller');
+const { checkOfflinePackUpdates, applyOfflinePackUpdate } = require('./offline/offlinePackUpdater');
 
 if (require('electron-squirrel-startup')) {
   app.quit();
@@ -14,6 +15,7 @@ const isDev = process.env.NODE_ENV === 'development';
 let mainWindow;
 let shouldQuit = false;
 let updateIntervalHandle = null;
+const LLAMA_N_PREDICT = 1536; // keep in sync with llamaRunner defaults
 
 const initAutoUpdater = () => {
   // electron-updater requires the app-update.yml produced by electron-builder.
@@ -208,6 +210,27 @@ app.on('ready', () => {
     return result;
   });
 
+  ipcMain.handle('offline:updateCheck', async () => {
+    return await checkOfflinePackUpdates();
+  });
+
+  ipcMain.handle('offline:updateApply', async () => {
+    if (!mainWindow) {
+      throw new Error('Window is not ready.');
+    }
+    const send = (payload) => {
+      try {
+        mainWindow?.webContents.send('offline:updateStatus', payload);
+      } catch {
+        // ignore
+      }
+    };
+    send({ status: 'starting' });
+    const result = await applyOfflinePackUpdate({ onStatus: send });
+    send({ status: 'completed', ...result });
+    return result;
+  });
+
   ipcMain.handle('util:pathToFileUrl', (_event, filePath) => {
     if (!filePath || typeof filePath !== 'string') {
       return null;
@@ -260,24 +283,47 @@ app.on('ready', () => {
       throw new Error('Invalid request: filePaths must be an array of strings.');
     }
 
-    const results = await Promise.allSettled(
-      filePaths.map(async (filePath) => {
-        if (typeof filePath !== 'string' || filePath.length === 0) {
-          throw new Error('Invalid file path.');
-        }
-        const report = await analyzePdfAtPath(filePath);
-        return { filePath, report };
-      })
-    );
-
-    return results.map((r, index) => {
-      const filePath = filePaths[index];
-      if (r.status === 'fulfilled') {
-        return { ok: true, filePath, report: r.value.report };
+    const send = (payload) => {
+      try {
+        mainWindow?.webContents.send('analysis:status', payload);
+      } catch {
+        // ignore
       }
-      const message = r.reason instanceof Error ? r.reason.message : 'An unexpected error occurred.';
-      return { ok: false, filePath, error: message };
-    });
+    };
+
+    const out = [];
+    for (let idx = 0; idx < filePaths.length; idx++) {
+      const filePath = filePaths[idx];
+      if (typeof filePath !== 'string' || filePath.length === 0) {
+        out.push({ ok: false, filePath, error: 'Invalid file path.' });
+        continue;
+      }
+
+      send({ status: 'file-start', filePath, index: idx + 1, totalFiles: filePaths.length });
+      try {
+        const report = await analyzePdfAtPath(filePath, {
+          onProgress: (p) => {
+            if (p?.stage === 'extracting' && p?.numPages) {
+              const pct = Math.max(0, Math.min(30, Math.floor((p.pageNumber / p.numPages) * 30)));
+              send({ status: 'progress', filePath, stage: 'extracting', percent: pct });
+            } else if (p?.stage === 'generating' && typeof p.outputChars === 'number') {
+              const estTokens = p.outputChars / 4;
+              const genPct = 30 + Math.min(69, Math.floor((estTokens / LLAMA_N_PREDICT) * 69));
+              send({ status: 'progress', filePath, stage: 'generating', percent: Math.min(99, genPct) });
+            }
+          }
+        });
+        send({ status: 'file-done', filePath, index: idx + 1, totalFiles: filePaths.length, percent: 100 });
+        out.push({ ok: true, filePath, report });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'An unexpected error occurred.';
+        send({ status: 'file-error', filePath, index: idx + 1, totalFiles: filePaths.length, message });
+        out.push({ ok: false, filePath, error: message });
+      }
+    }
+
+    send({ status: 'done' });
+    return out;
   });
 
   app.on('activate', () => {

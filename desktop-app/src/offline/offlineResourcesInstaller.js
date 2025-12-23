@@ -25,11 +25,14 @@ function getExpectedPaths(baseDir) {
     : (process.platform === 'win32' ? 'win-x64' : `${process.platform}-${process.arch}`);
 
   const llamaBin = process.platform === 'win32' ? 'llama.exe' : 'llama';
+  const ocrmypdfBin = process.platform === 'win32' ? 'ocrmypdf.exe' : 'ocrmypdf';
 
   return {
     baseDir,
     modelPath: path.join(baseDir, 'models', 'model-8b-q4.gguf'),
-    llamaPath: path.join(baseDir, 'llama', platformKey, llamaBin)
+    llamaPath: path.join(baseDir, 'llama', platformKey, llamaBin),
+    // Optional: bundled OCR tool. Not required for "installed" status.
+    ocrmypdfPath: path.join(baseDir, 'tools', 'ocr', platformKey, ocrmypdfBin)
   };
 }
 
@@ -45,7 +48,8 @@ async function getOfflineResourcesStatus() {
     installed: missing.length === 0,
     missing,
     baseDir,
-    url: getOfflinePackUrl()
+    url: getOfflinePackUrl(),
+    ocrAvailable: fs.existsSync(expected.ocrmypdfPath)
   };
 }
 

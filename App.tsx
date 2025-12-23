@@ -15,6 +15,10 @@ const App: React.FC = () => {
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<{ status: string; percent?: number; message?: string } | null>(null);
   const [updateActionMessage, setUpdateActionMessage] = useState<string | null>(null);
+  const [analysisStartMs, setAnalysisStartMs] = useState<number | null>(null);
+  const [analysisElapsedMs, setAnalysisElapsedMs] = useState<number>(0);
+  const [analysisPercent, setAnalysisPercent] = useState<number | null>(null);
+  const [analysisStage, setAnalysisStage] = useState<string | null>(null);
 
   const clearPreviousReports = useCallback(() => {
     setAnalysisReports((previousReports) => {
@@ -32,6 +36,9 @@ const App: React.FC = () => {
     setIsLoading(true);
     setErrors([]);
     clearPreviousReports();
+    setAnalysisStartMs(Date.now());
+    setAnalysisPercent(null);
+    setAnalysisStage('uploading');
 
     const results = await Promise.allSettled(files.map(file => analyzeSOP(file)));
 
@@ -52,12 +59,16 @@ const App: React.FC = () => {
     setAnalysisReports(newReports);
     setErrors(newErrors);
     setIsLoading(false);
+    setAnalysisStage(null);
   }, [clearPreviousReports]);
 
   const handleAnalyzeDesktop = useCallback(async (files: DesktopPickedFile[]) => {
     setIsLoading(true);
     setErrors([]);
     clearPreviousReports();
+    setAnalysisStartMs(Date.now());
+    setAnalysisPercent(0);
+    setAnalysisStage('starting');
 
     try {
       const api = window.desktopAPI;
@@ -90,6 +101,7 @@ const App: React.FC = () => {
       setErrors([{ fileName: 'Offline Analysis', message: msg }]);
     } finally {
       setIsLoading(false);
+      setAnalysisStage(null);
     }
   }, [clearPreviousReports]);
 
@@ -134,6 +146,43 @@ const App: React.FC = () => {
       }
     };
   }, []);
+
+  React.useEffect(() => {
+    // Elapsed timer while analyzing
+    if (!isLoading || !analysisStartMs) {
+      setAnalysisElapsedMs(0);
+      return;
+    }
+    const t = setInterval(() => {
+      setAnalysisElapsedMs(Date.now() - analysisStartMs);
+    }, 200);
+    return () => clearInterval(t);
+  }, [isLoading, analysisStartMs]);
+
+  React.useEffect(() => {
+    const api = window.desktopAPI;
+    if (!api?.onAnalysisStatus) return;
+    const unsub = api.onAnalysisStatus((payload: any) => {
+      if (payload?.status === 'progress') {
+        if (typeof payload.percent === 'number') setAnalysisPercent(payload.percent);
+        if (payload.stage) setAnalysisStage(payload.stage);
+      }
+    });
+    return () => {
+      try {
+        unsub?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  const formatElapsed = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, '0')}`;
+  };
 
   const handleCheckForUpdates = useCallback(async () => {
     setUpdateActionMessage(null);
@@ -218,7 +267,18 @@ const App: React.FC = () => {
   const LoadingIndicator: React.FC = () => (
     <div className="mt-12 text-center">
         <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-brand-blue"></div>
-        <p className="mt-4 text-lg text-brand-gray">Analyzing documents... This may take a moment.</p>
+        <p className="mt-4 text-lg text-brand-gray">
+          Analyzing documents... This may take a moment.
+          {analysisStartMs ? <span className="block text-sm mt-1">Elapsed: {formatElapsed(analysisElapsedMs)}</span> : null}
+          {typeof analysisPercent === 'number' ? <span className="block text-sm mt-1">Progress: {analysisPercent}% {analysisStage ? `(${analysisStage})` : ''}</span> : null}
+        </p>
+        {typeof analysisPercent === 'number' ? (
+          <div className="mt-4 max-w-md mx-auto">
+            <div className="h-2 w-full bg-white/10 rounded">
+              <div className="h-2 bg-brand-blue rounded" style={{ width: `${Math.max(0, Math.min(100, analysisPercent))}%` }} />
+            </div>
+          </div>
+        ) : null}
     </div>
   );
 

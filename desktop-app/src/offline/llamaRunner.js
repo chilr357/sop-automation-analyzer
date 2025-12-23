@@ -104,7 +104,7 @@ function extractJsonObject(text) {
   throw new Error('Model output did not contain a complete JSON object.');
 }
 
-async function runLlamaCli({ prompt }) {
+async function runLlamaCli({ prompt, onProgress } = {}) {
   const resourcesBase = getResourcesBase();
   const llamaBin = findLlamaBinary(resourcesBase);
   const modelPath = getModelPath(resourcesBase);
@@ -159,8 +159,16 @@ async function runLlamaCli({ prompt }) {
     let stdout = '';
     let stderr = '';
 
+    let outChars = 0;
     child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString('utf8');
+      const s = chunk.toString('utf8');
+      stdout += s;
+      outChars += s.length;
+      try {
+        onProgress?.({ stage: 'generating', outputChars: outChars });
+      } catch {
+        // ignore
+      }
     });
     child.stderr.on('data', (chunk) => {
       stderr += chunk.toString('utf8');
@@ -188,8 +196,8 @@ async function runLlamaCli({ prompt }) {
   });
 }
 
-async function runLlamaJson({ prompt }) {
-  const raw = await runLlamaCli({ prompt });
+async function runLlamaJson({ prompt, onProgress } = {}) {
+  const raw = await runLlamaCli({ prompt, onProgress });
   const jsonText = extractJsonObject(raw);
   try {
     return JSON.parse(jsonText);

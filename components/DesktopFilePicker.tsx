@@ -11,10 +11,19 @@ interface DesktopFilePickerProps {
 export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading, onAnalyzePaths }) => {
   const [selectedFiles, setSelectedFiles] = useState<DesktopPickedFile[]>([]);
   const [pickError, setPickError] = useState<string | null>(null);
-  const [offlineStatus, setOfflineStatus] = useState<{ installed: boolean; url: string; baseDir?: string } | null>(null);
+  const [offlineStatus, setOfflineStatus] = useState<{ installed: boolean; url: string; baseDir?: string; ocrAvailable?: boolean } | null>(null);
   const [offlineInstallError, setOfflineInstallError] = useState<string | null>(null);
   const [isInstallingOffline, setIsInstallingOffline] = useState(false);
   const [isInstallingFromZip, setIsInstallingFromZip] = useState(false);
+  const [offlineUpdateInfo, setOfflineUpdateInfo] = useState<{
+    checked: boolean;
+    localVersion: string | null;
+    remoteVersion: string | null;
+    updateAvailable: boolean;
+    message?: string;
+  }>({ checked: false, localVersion: null, remoteVersion: null, updateAvailable: false });
+  const [offlineUpdateStatus, setOfflineUpdateStatus] = useState<{ status: string; percent?: number; filePath?: string } | null>(null);
+  const [isUpdatingOffline, setIsUpdatingOffline] = useState(false);
 
   const refreshOfflineStatus = useCallback(async () => {
     let cancelled = false;
@@ -22,7 +31,7 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
       try {
         const s = await window.desktopAPI?.getOfflineResourcesStatus?.();
         if (!cancelled && s) {
-          setOfflineStatus({ installed: s.installed, url: s.url, baseDir: s.baseDir });
+          setOfflineStatus({ installed: s.installed, url: s.url, baseDir: s.baseDir, ocrAvailable: (s as any).ocrAvailable });
         }
       } catch {
         // ignore
@@ -36,6 +45,23 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
   React.useEffect(() => {
     void refreshOfflineStatus();
   }, [refreshOfflineStatus]);
+
+  React.useEffect(() => {
+    const api = window.desktopAPI;
+    if (!api?.onOfflinePackUpdateStatus) return;
+    const unsub = api.onOfflinePackUpdateStatus((payload: any) => {
+      if (payload?.status) {
+        setOfflineUpdateStatus(payload);
+      }
+    });
+    return () => {
+      try {
+        unsub?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
 
   const handlePick = useCallback(async () => {
     setPickError(null);
@@ -91,6 +117,53 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
       setIsInstallingFromZip(false);
     }
   }, []);
+
+  const handleCheckOfflineUpdates = useCallback(async () => {
+    setOfflineUpdateInfo((p) => ({ ...p, checked: true, message: undefined }));
+    try {
+      const api = window.desktopAPI;
+      if (!api?.checkOfflinePackUpdates) {
+        setOfflineUpdateInfo({
+          checked: true,
+          localVersion: null,
+          remoteVersion: null,
+          updateAvailable: false,
+          message: 'Offline pack updater is unavailable.'
+        });
+        return;
+      }
+      const res = await api.checkOfflinePackUpdates();
+      setOfflineUpdateInfo({
+        checked: true,
+        localVersion: res.localVersion,
+        remoteVersion: res.remoteVersion,
+        updateAvailable: !!res.updateAvailable,
+        message: res.updateAvailable ? 'Update available.' : 'Offline pack is up to date.'
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to check offline pack updates.';
+      setOfflineUpdateInfo({ checked: true, localVersion: null, remoteVersion: null, updateAvailable: false, message: msg });
+    }
+  }, []);
+
+  const handleApplyOfflineUpdate = useCallback(async () => {
+    setOfflineInstallError(null);
+    setIsUpdatingOffline(true);
+    try {
+      const api = window.desktopAPI;
+      if (!api?.applyOfflinePackUpdate) {
+        throw new Error('Offline pack updater is unavailable.');
+      }
+      await api.applyOfflinePackUpdate();
+      await refreshOfflineStatus();
+      await handleCheckOfflineUpdates();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to update offline pack.';
+      setOfflineInstallError(msg);
+    } finally {
+      setIsUpdatingOffline(false);
+    }
+  }, [handleCheckOfflineUpdates, refreshOfflineStatus]);
 
   const handleAnalyzeClick = () => {
     if (selectedFiles.length > 0) {
@@ -163,25 +236,62 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
               {offlineStatus.baseDir ? (
                 <span className="text-green-100/80"> Installed at: {offlineStatus.baseDir}</span>
               ) : null}
+              {offlineStatus.ocrAvailable ? (
+                <span className="text-green-100/80"> • OCR: available</span>
+              ) : (
+                <span className="text-green-100/60"> • OCR: not included</span>
+              )}
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <button
                 type="button"
                 onClick={handleInstallOfflineFromZip}
-                disabled={isLoading || isInstallingOffline || isInstallingFromZip}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip || isUpdatingOffline}
                 className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
               >
                 {isInstallingFromZip ? 'Installing…' : 'Reinstall from ZIP'}
               </button>
               <button
                 type="button"
+                onClick={handleCheckOfflineUpdates}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip || isUpdatingOffline}
+                className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+              >
+                Check Offline Pack Updates
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyOfflineUpdate}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip || isUpdatingOffline || !offlineUpdateInfo.updateAvailable}
+                className="bg-yellow-600 text-black font-semibold py-2 px-4 rounded-md hover:bg-yellow-500 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+              >
+                {isUpdatingOffline ? 'Updating…' : 'Update Offline Pack'}
+              </button>
+              <button
+                type="button"
                 onClick={refreshOfflineStatus}
-                disabled={isLoading || isInstallingOffline || isInstallingFromZip}
+                disabled={isLoading || isInstallingOffline || isInstallingFromZip || isUpdatingOffline}
                 className="bg-gray-800 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-700 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
               >
                 Refresh
               </button>
             </div>
+            {offlineUpdateInfo.checked ? (
+              <div className="text-green-100/80">
+                Offline pack version: {offlineUpdateInfo.localVersion || 'unknown'} → {offlineUpdateInfo.remoteVersion || 'unknown'}{' '}
+                {offlineUpdateInfo.message ? `(${offlineUpdateInfo.message})` : ''}
+              </div>
+            ) : null}
+            {offlineUpdateStatus?.status === 'downloading' && typeof offlineUpdateStatus.percent === 'number' ? (
+              <div className="text-green-100/80">
+                Updating offline pack… {offlineUpdateStatus.percent}%{offlineUpdateStatus.filePath ? ` (${offlineUpdateStatus.filePath})` : ''}
+              </div>
+            ) : null}
+            {offlineInstallError && (
+              <div className="text-red-200">
+                {offlineInstallError}
+              </div>
+            )}
           </div>
         )}
 

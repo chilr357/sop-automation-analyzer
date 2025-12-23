@@ -1,7 +1,9 @@
 const os = require('node:os');
 const path = require('node:path');
 const fsp = require('node:fs/promises');
+const fs = require('node:fs');
 const { spawn } = require('node:child_process');
+const { getUserOfflineResourcesDir } = require('./offlineResourcesInstaller');
 
 function run(cmd, args, opts = {}) {
   return new Promise((resolve) => {
@@ -16,8 +18,50 @@ function run(cmd, args, opts = {}) {
 }
 
 async function hasOcrMyPdf() {
-  const res = await run('ocrmypdf', ['--version']);
+  const resolved = resolveBundledOrSystemOcrMyPdf();
+  if (!resolved) return false;
+  const res = await run(resolved, ['--version'], { windowsHide: true });
   return res.code === 0;
+}
+
+function getResourcesBase() {
+  // Preferred: userData-installed offline resources (survives auto-updates, writable).
+  try {
+    const userDir = getUserOfflineResourcesDir();
+    if (userDir && fs.existsSync(userDir)) return userDir;
+  } catch {
+    // ignore
+  }
+
+  // Packaged builds: `<resourcesPath>/resources/` (when present)
+  if (process.resourcesPath) {
+    return path.join(process.resourcesPath, 'resources');
+  }
+  return path.resolve(__dirname, '..', '..', 'resources');
+}
+
+function getPlatformKey() {
+  if (process.platform === 'darwin') {
+    return process.arch === 'arm64' ? 'mac-arm64' : 'mac-x64';
+  }
+  if (process.platform === 'win32') return 'win-x64';
+  return `${process.platform}-${process.arch}`;
+}
+
+function resolveBundledOrSystemOcrMyPdf() {
+  // If the offline pack includes OCR tooling, prefer that.
+  const resourcesBase = getResourcesBase();
+  const platformKey = getPlatformKey();
+  const binDir = path.join(resourcesBase, 'tools', 'ocr', platformKey);
+  const candidates = process.platform === 'win32'
+    ? ['ocrmypdf.exe', 'ocrmypdf.cmd', 'ocrmypdf.bat']
+    : ['ocrmypdf'];
+  for (const c of candidates) {
+    const p = path.join(binDir, c);
+    if (fs.existsSync(p)) return p;
+  }
+  // Fallback to PATH lookup.
+  return 'ocrmypdf';
 }
 
 /**
@@ -29,6 +73,8 @@ async function hasOcrMyPdf() {
  * - This is intentionally "best effort": we don't want hard dependency bloat inside the installer.
  */
 async function ocrToSearchablePdfBestEffort(inputPdfPath) {
+  const resolved = resolveBundledOrSystemOcrMyPdf();
+  if (!resolved) return null;
   const ok = await hasOcrMyPdf();
   if (!ok) return null;
 
@@ -43,7 +89,7 @@ async function ocrToSearchablePdfBestEffort(inputPdfPath) {
     outputPdfPath
   ];
 
-  const res = await run('ocrmypdf', args, { windowsHide: true });
+  const res = await run(resolved, args, { windowsHide: true });
   if (res.code === 0) return outputPdfPath;
   return null;
 }

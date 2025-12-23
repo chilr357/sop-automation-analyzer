@@ -89,8 +89,18 @@ function buildPrompt({ pages, ctxSize = DEFAULT_CTX_SIZE, nPredict = DEFAULT_N_P
   return `${head}\n\n[TRUNCATED TO FIT CONTEXT]\n\n${tail}`;
 }
 
-async function analyzePdfAtPath(filePath) {
-  let pages = await extractPdfPagesText(filePath);
+async function analyzePdfAtPath(filePath, opts = {}) {
+  const onProgress = typeof opts?.onProgress === 'function' ? opts.onProgress : null;
+
+  let pages = await extractPdfPagesText(filePath, {
+    onProgress: (p) => {
+      try {
+        onProgress?.(p);
+      } catch {
+        // ignore
+      }
+    }
+  });
   let totalChars = pages.reduce((sum, p) => sum + (p.text ? p.text.length : 0), 0);
   let nonEmptyPages = pages.reduce((sum, p) => sum + (p.text && p.text.trim().length > 0 ? 1 : 0), 0);
 
@@ -102,7 +112,15 @@ async function analyzePdfAtPath(filePath) {
     if (ocrAvailable) {
       const ocrPdfPath = await ocrToSearchablePdfBestEffort(filePath);
       if (ocrPdfPath) {
-        pages = await extractPdfPagesText(ocrPdfPath);
+        pages = await extractPdfPagesText(ocrPdfPath, {
+          onProgress: (p) => {
+            try {
+              onProgress?.({ ...p, ocr: true });
+            } catch {
+              // ignore
+            }
+          }
+        });
         totalChars = pages.reduce((sum, p) => sum + (p.text ? p.text.length : 0), 0);
         nonEmptyPages = pages.reduce((sum, p) => sum + (p.text && p.text.trim().length > 0 ? 1 : 0), 0);
       }
@@ -128,7 +146,16 @@ async function analyzePdfAtPath(filePath) {
   }
   const prompt = buildPrompt({ pages });
 
-  const data = await runLlamaJson({ prompt });
+  const data = await runLlamaJson({
+    prompt,
+    onProgress: (p) => {
+      try {
+        onProgress?.(p);
+      } catch {
+        // ignore
+      }
+    }
+  });
   const parsed = AnalysisReportSchema.safeParse(data);
   if (!parsed.success) {
     throw new Error(`Offline analysis produced invalid JSON schema: ${parsed.error.message}`);

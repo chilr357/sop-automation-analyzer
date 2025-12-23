@@ -14,6 +14,7 @@ declare global {
       analyzePdfPaths: (
         filePaths: string[]
       ) => Promise<Array<{ ok: true; filePath: string; report: AnalysisReport } | { ok: false; filePath: string; error: string }>>;
+      onAnalysisStatus: (callback: (payload: any) => void) => () => void;
       pathToFileUrl: (filePath: string) => Promise<string | null>;
 
       // Auto-updater
@@ -22,14 +23,25 @@ declare global {
       onUpdateStatus: (callback: (payload: { status: string; percent?: number; bytesPerSecond?: number; message?: string }) => void) => () => void;
 
       // Offline pack installer (downloads from Supabase public URL and installs into userData)
-      getOfflineResourcesStatus: () => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string }>;
-      installOfflineResources: () => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string }>;
+      getOfflineResourcesStatus: () => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string; ocrAvailable?: boolean }>;
+      installOfflineResources: () => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string; ocrAvailable?: boolean }>;
+      checkOfflinePackUpdates: () => Promise<{
+        ok: boolean;
+        baseDir: string;
+        manifestUrl: string;
+        localVersion: string | null;
+        remoteVersion: string;
+        updateAvailable: boolean;
+        filesToUpdate: Array<{ path: string; size: number | null }>;
+      }>;
+      applyOfflinePackUpdate: () => Promise<{ ok: boolean; baseDir: string; version: string }>;
+      onOfflinePackUpdateStatus: (callback: (payload: any) => void) => () => void;
 
       // Offline pack local install (user already downloaded the zip)
       pickOfflinePackZip: () => Promise<string | null>;
       installOfflineResourcesFromZip: (
         zipPath: string
-      ) => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string }>;
+      ) => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string; ocrAvailable?: boolean }>;
     };
   }
 }
