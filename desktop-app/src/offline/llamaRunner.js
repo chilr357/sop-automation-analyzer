@@ -104,7 +104,7 @@ function extractJsonObject(text) {
   throw new Error('Model output did not contain a complete JSON object.');
 }
 
-async function runLlamaCli({ prompt }) {
+async function runLlamaCli({ prompt, onProgress }) {
   const resourcesBase = getResourcesBase();
   const llamaBin = findLlamaBinary(resourcesBase);
   const modelPath = getModelPath(resourcesBase);
@@ -131,11 +131,12 @@ async function runLlamaCli({ prompt }) {
   // - Many Llama-2-style models train at 4k context; using 8k can error unless the prompt is trimmed.
   // - Larger ctx also increases memory usage (KV cache).
   const threads = Math.max(1, (os.cpus()?.length || 4) - 1);
+  const nPredict = 1536;
   const args = [
     '-m', modelPath,
     '-f', promptPath,
     '--ctx-size', '4096',
-    '--n-predict', '1536',
+    '--n-predict', String(nPredict),
     '-t', String(threads),
     '--temp', '0.2',
     '--top-p', '0.9',
@@ -158,9 +159,28 @@ async function runLlamaCli({ prompt }) {
     });
     let stdout = '';
     let stderr = '';
+    let lastProgressAt = 0;
+    let approxTokens = 0;
 
     child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString('utf8');
+      const text = chunk.toString('utf8');
+      stdout += text;
+      // Best-effort progress: count "word-ish" tokens in generated output.
+      // This is not exact, but provides a useful UI signal.
+      const words = text.trim().split(/\s+/).filter(Boolean);
+      approxTokens += words.length;
+      if (onProgress) {
+        const now = Date.now();
+        if (now - lastProgressAt > 750) {
+          lastProgressAt = now;
+          try {
+            const pct = Math.max(0, Math.min(99, (approxTokens / Math.max(1, nPredict)) * 100));
+            onProgress({ stage: 'model', percent: pct, tokens: approxTokens, targetTokens: nPredict });
+          } catch {
+            // ignore
+          }
+        }
+      }
     });
     child.stderr.on('data', (chunk) => {
       stderr += chunk.toString('utf8');
@@ -188,8 +208,8 @@ async function runLlamaCli({ prompt }) {
   });
 }
 
-async function runLlamaJson({ prompt }) {
-  const raw = await runLlamaCli({ prompt });
+async function runLlamaJson({ prompt, onProgress }) {
+  const raw = await runLlamaCli({ prompt, onProgress });
   const jsonText = extractJsonObject(raw);
   try {
     return JSON.parse(jsonText);

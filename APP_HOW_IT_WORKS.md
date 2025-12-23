@@ -143,3 +143,5 @@ This project is a **desktop app (Electron) that embeds a React 19 + TypeScript s
 **A signed/notarized Electron desktop wrapper loads a local React SPA; the SPA uploads SOP PDFs, sends them to Gemini with a strict prompt + JSON schema, and renders a tabbed dashboard of automation opportunities, roadmap, and current-state insights per document.**
 
 
+
+

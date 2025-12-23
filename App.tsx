@@ -15,6 +15,8 @@ const App: React.FC = () => {
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<{ status: string; percent?: number; message?: string } | null>(null);
   const [updateActionMessage, setUpdateActionMessage] = useState<string | null>(null);
+  const [analysisProgress, setAnalysisProgress] = useState<{ percent?: number; stage?: string; message?: string; fileIndex?: number; fileCount?: number } | null>(null);
+  const [analysisElapsedMs, setAnalysisElapsedMs] = useState<number>(0);
 
   const clearPreviousReports = useCallback(() => {
     setAnalysisReports((previousReports) => {
@@ -30,6 +32,7 @@ const App: React.FC = () => {
 
   const handleAnalyze = useCallback(async (files: File[]) => {
     setIsLoading(true);
+    setAnalysisProgress(null);
     setErrors([]);
     clearPreviousReports();
 
@@ -56,6 +59,7 @@ const App: React.FC = () => {
 
   const handleAnalyzeDesktop = useCallback(async (files: DesktopPickedFile[]) => {
     setIsLoading(true);
+    setAnalysisProgress(null);
     setErrors([]);
     clearPreviousReports();
 
@@ -134,6 +138,50 @@ const App: React.FC = () => {
       }
     };
   }, []);
+
+  React.useEffect(() => {
+    const api = window.desktopAPI;
+    if (!api?.onAnalysisProgress) return;
+    const unsubscribe = api.onAnalysisProgress((payload) => {
+      if (payload && typeof payload === 'object') {
+        if (typeof payload.percent === 'number' || typeof payload.stage === 'string') {
+          setAnalysisProgress({
+            percent: typeof payload.percent === 'number' ? payload.percent : undefined,
+            stage: typeof payload.stage === 'string' ? payload.stage : undefined,
+            message: typeof payload.message === 'string' ? payload.message : undefined,
+            fileIndex: typeof payload.fileIndex === 'number' ? payload.fileIndex : undefined,
+            fileCount: typeof payload.fileCount === 'number' ? payload.fileCount : undefined
+          });
+        }
+      }
+    });
+    return () => {
+      try {
+        unsubscribe?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  React.useEffect(() => {
+    if (!isLoading) {
+      setAnalysisElapsedMs(0);
+      return;
+    }
+    const start = Date.now();
+    const id = setInterval(() => {
+      setAnalysisElapsedMs(Date.now() - start);
+    }, 250);
+    return () => clearInterval(id);
+  }, [isLoading]);
+
+  const formatElapsed = (ms: number) => {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  };
 
   const handleCheckForUpdates = useCallback(async () => {
     setUpdateActionMessage(null);
@@ -218,7 +266,28 @@ const App: React.FC = () => {
   const LoadingIndicator: React.FC = () => (
     <div className="mt-12 text-center">
         <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-brand-blue"></div>
-        <p className="mt-4 text-lg text-brand-gray">Analyzing documents... This may take a moment.</p>
+        <p className="mt-4 text-lg text-brand-gray">
+          Analyzing documents... This may take a moment.
+        </p>
+        <p className="mt-2 text-sm text-brand-gray/80">
+          Elapsed: {formatElapsed(analysisElapsedMs)}
+          {analysisProgress?.fileIndex && analysisProgress?.fileCount ? (
+            <span> · File {analysisProgress.fileIndex}/{analysisProgress.fileCount}</span>
+          ) : null}
+        </p>
+        {typeof analysisProgress?.percent === 'number' ? (
+          <div className="mt-3 max-w-md mx-auto">
+            <div className="w-full bg-white/10 rounded h-2 overflow-hidden">
+              <div
+                className="h-2 bg-brand-blue"
+                style={{ width: `${Math.max(0, Math.min(100, analysisProgress.percent))}%` }}
+              />
+            </div>
+            <div className="mt-2 text-xs text-brand-gray/80">
+              {analysisProgress.message || analysisProgress.stage || `Progress: ${analysisProgress.percent.toFixed(0)}%`}
+            </div>
+          </div>
+        ) : null}
     </div>
   );
 

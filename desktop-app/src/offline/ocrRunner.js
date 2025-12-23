@@ -2,6 +2,7 @@ const os = require('node:os');
 const path = require('node:path');
 const fsp = require('node:fs/promises');
 const { spawn } = require('node:child_process');
+const { getUserOfflineResourcesDir, getExpectedPaths } = require('./offlineResourcesInstaller');
 
 function run(cmd, args, opts = {}) {
   return new Promise((resolve) => {
@@ -16,6 +17,17 @@ function run(cmd, args, opts = {}) {
 }
 
 async function hasOcrMyPdf() {
+  // Prefer bundled OCR tool (if included in offline resources)
+  try {
+    const baseDir = getUserOfflineResourcesDir();
+    const expected = getExpectedPaths(baseDir);
+    if (expected?.ocrMyPdfPath) {
+      const resBundled = await run(expected.ocrMyPdfPath, ['--version']);
+      if (resBundled.code === 0) return true;
+    }
+  } catch {
+    // ignore
+  }
   const res = await run('ocrmypdf', ['--version']);
   return res.code === 0;
 }
@@ -43,7 +55,20 @@ async function ocrToSearchablePdfBestEffort(inputPdfPath) {
     outputPdfPath
   ];
 
-  const res = await run('ocrmypdf', args, { windowsHide: true });
+  // Prefer bundled OCR tool if present.
+  let cmd = 'ocrmypdf';
+  try {
+    const baseDir = getUserOfflineResourcesDir();
+    const expected = getExpectedPaths(baseDir);
+    if (expected?.ocrMyPdfPath) {
+      const test = await run(expected.ocrMyPdfPath, ['--version'], { windowsHide: true });
+      if (test.code === 0) cmd = expected.ocrMyPdfPath;
+    }
+  } catch {
+    // ignore
+  }
+
+  const res = await run(cmd, args, { windowsHide: true });
   if (res.code === 0) return outputPdfPath;
   return null;
 }
