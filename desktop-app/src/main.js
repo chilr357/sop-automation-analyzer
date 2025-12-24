@@ -1,6 +1,6 @@
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell, clipboard } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const log = require('electron-log');
 const { analyzePdfAtPath } = require('./offline/offlineAnalyzer');
@@ -243,6 +243,26 @@ app.on('ready', () => {
       return { ok: true, available, installUrl };
     } catch (e) {
       return { ok: false, available: false, installUrl, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  ipcMain.handle('shell:openExternal', async (_event, url) => {
+    try {
+      if (!url || typeof url !== 'string') return { ok: false, message: 'Invalid URL.' };
+      await shell.openExternal(url);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
+  ipcMain.handle('clipboard:writeText', async (_event, text) => {
+    try {
+      if (typeof text !== 'string') return { ok: false, message: 'Invalid text.' };
+      clipboard.writeText(text);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
     }
   });
 

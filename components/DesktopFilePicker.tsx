@@ -19,6 +19,7 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
   const [offlineUpdateStatus, setOfflineUpdateStatus] = useState<{ status: string; percent?: number; component?: string; message?: string } | null>(null);
   const [isUpdatingOffline, setIsUpdatingOffline] = useState(false);
   const [ocrTools, setOcrTools] = useState<{ available: boolean; installUrl: string } | null>(null);
+  const [ocrToolsMessage, setOcrToolsMessage] = useState<string | null>(null);
 
   const refreshOfflineStatus = useCallback(async () => {
     let cancelled = false;
@@ -249,13 +250,31 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
                 <div className="mt-2">
                   <button
                     type="button"
-                    onClick={() => window.desktopAPI?.openExternal?.(ocrTools.installUrl)}
+                    onClick={async () => {
+                      setOcrToolsMessage(null);
+                      const url = ocrTools.installUrl;
+                      try {
+                        const res = await window.desktopAPI?.openExternal?.(url);
+                        if (res && !res.ok) {
+                          await window.desktopAPI?.copyToClipboard?.(url);
+                          setOcrToolsMessage(`Couldn’t open your browser. Link copied to clipboard: ${url}`);
+                        }
+                      } catch {
+                        try {
+                          await window.desktopAPI?.copyToClipboard?.(url);
+                          setOcrToolsMessage(`Couldn’t open your browser. Link copied to clipboard: ${url}`);
+                        } catch {
+                          setOcrToolsMessage(`Couldn’t open your browser. Please open this link manually: ${url}`);
+                        }
+                      }
+                    }}
                     disabled={isLoading}
                     className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
                   >
                     Install OCR Tools
                   </button>
                 </div>
+                {ocrToolsMessage ? <div className="mt-2 text-xs text-yellow-200">{ocrToolsMessage}</div> : null}
               </div>
             ) : null}
             <div className="flex flex-col sm:flex-row gap-2">

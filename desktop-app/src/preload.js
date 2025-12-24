@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, shell } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktopAPI', {
   getAppInfo: async () => ({
@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   checkOfflinePackUpdate: () => ipcRenderer.invoke('offline:checkUpdate'),
   updateOfflinePack: () => ipcRenderer.invoke('offline:update'),
   getOcrToolsStatus: () => ipcRenderer.invoke('offline:ocrToolsStatus'),
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  copyToClipboard: (text) => ipcRenderer.invoke('clipboard:writeText', text),
   onOfflineUpdateStatus: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const handler = (_event, payload) => {
@@ -54,10 +56,5 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   },
   pickOfflinePackZip: () => ipcRenderer.invoke('dialog:pickOfflinePackZip'),
   installOfflineResourcesFromZip: (zipPath) => ipcRenderer.invoke('offline:installFromZip', zipPath),
-  openExternal: (url) => {
-    if (!url || typeof url !== 'string') {
-      return;
-    }
-    shell.openExternal(url);
-  }
+  // (openExternal is above as an IPC invoke so failures can be surfaced to the UI)
 });
