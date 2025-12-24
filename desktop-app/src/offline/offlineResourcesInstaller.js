@@ -232,6 +232,39 @@ async function fetchJson(url) {
   return JSON.parse(text);
 }
 
+async function headUrl(urlString) {
+  const u = new URL(urlString);
+  const proto = u.protocol === 'http:' ? http : https;
+  return await new Promise((resolve, reject) => {
+    const req = proto.request(
+      {
+        method: 'HEAD',
+        protocol: u.protocol,
+        hostname: u.hostname,
+        port: u.port || undefined,
+        path: u.pathname + u.search,
+        headers: { 'User-Agent': 'sop-automation-analyzer' }
+      },
+      (res) => {
+        const statusCode = res.statusCode || 0;
+        res.resume();
+        if (statusCode >= 200 && statusCode < 300) {
+          resolve({
+            statusCode,
+            etag: res.headers.etag ? String(res.headers.etag) : null,
+            lastModified: res.headers['last-modified'] ? String(res.headers['last-modified']) : null,
+            contentLength: res.headers['content-length'] ? Number(res.headers['content-length']) : null
+          });
+          return;
+        }
+        reject(new Error(`HEAD ${urlString} failed: HTTP ${statusCode}`));
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 function getPlatformKey() {
   return process.platform === 'darwin'
     ? (process.arch === 'arm64' ? 'mac-arm64' : 'mac-x64')
@@ -246,15 +279,38 @@ async function checkOfflinePackUpdate() {
   try {
     remote = await fetchJson(status.manifestUrl);
   } catch {
-    // If no manifest is available, we can't do versioning/delta updates.
-    return {
-      ok: false,
-      message: 'Offline pack manifest not available. Falling back to full zip downloads.',
-      installedVersion: status.installedPackVersion,
-      latestVersion: null,
-      needsUpdate: !status.installed,
-      componentsToUpdate: []
-    };
+    // If no manifest is available, fall back to "full zip" checks using ETag/Last-Modified.
+    try {
+      const remoteZip = await headUrl(status.url);
+      let localManifest = null;
+      try {
+        const text = await fsp.readFile(getLocalManifestPath(baseDir), 'utf8');
+        localManifest = JSON.parse(text);
+      } catch {
+        // ignore
+      }
+      const localEtag = localManifest?.zip?.etag || null;
+      const installedVersion = status.installedPackVersion || localEtag || null;
+      const latestVersion = remoteZip.etag || remoteZip.lastModified || null;
+      const needsUpdate = !status.installed || !localEtag || (!!remoteZip.etag && localEtag !== remoteZip.etag);
+      return {
+        ok: true,
+        message: 'Offline pack manifest not available. Using full-zip update checks (ETag/Last-Modified).',
+        installedVersion,
+        latestVersion,
+        needsUpdate,
+        componentsToUpdate: []
+      };
+    } catch {
+      return {
+        ok: false,
+        message: 'Offline pack manifest not available. Falling back to full zip downloads.',
+        installedVersion: status.installedPackVersion,
+        latestVersion: null,
+        needsUpdate: !status.installed,
+        componentsToUpdate: []
+      };
+    }
   }
 
   const localVersion = status.installedPackVersion;
@@ -294,21 +350,90 @@ async function checkOfflinePackUpdate() {
   };
 }
 
-async function writeLocalManifest(baseDir, remoteManifest, componentsInstalled) {
+async function writeLocalManifest(baseDir, remoteManifest, componentsInstalled, zipMeta) {
   const out = {
     version: remoteManifest?.version || null,
     updatedAt: new Date().toISOString(),
-    components: componentsInstalled || {}
+    components: componentsInstalled || {},
+    zip: zipMeta || null
   };
   await fsp.mkdir(baseDir, { recursive: true });
   await fsp.writeFile(getLocalManifestPath(baseDir), JSON.stringify(out, null, 2), 'utf8');
+}
+
+async function installOfflineResourcesLegacyZip({ onProgress, remoteManifest } = {}) {
+  const status = await getOfflineResourcesStatus();
+  const url = status.url;
+
+  if (onProgress) onProgress({ status: 'downloading', message: 'Downloading offline pack…', percent: 0 });
+
+  let zipMeta = null;
+  try {
+    zipMeta = await headUrl(url);
+  } catch {
+    // ignore
+  }
+
+  const tmpBase = await fsp.mkdtemp(path.join(os.tmpdir(), 'offline-pack-'));
+  const zipPath = path.join(tmpBase, 'offline-pack.zip');
+  const extractDir = path.join(tmpBase, 'extract');
+
+  await downloadToFile(url, zipPath);
+
+  if (onProgress) onProgress({ status: 'installing', message: 'Installing offline pack…', percent: 90 });
+  await extractZip(zipPath, extractDir);
+
+  const extractedResources = path.join(extractDir, 'resources');
+  if (!fs.existsSync(extractedResources)) {
+    throw new Error('Offline pack zip must contain a top-level resources/ folder.');
+  }
+
+  const userDir = getUserOfflineResourcesDir();
+  await fsp.rm(userDir, { recursive: true, force: true });
+  await fsp.mkdir(userDir, { recursive: true });
+
+  // Copy extracted resources/* -> userDir/*
+  await fsp.cp(extractedResources, userDir, { recursive: true });
+
+  // Ensure mac binaries are executable if present
+  if (process.platform !== 'win32') {
+    const maybeLlama = getExpectedPaths(userDir).llamaPath;
+    try {
+      await fsp.chmod(maybeLlama, 0o755);
+    } catch {
+      // ignore
+    }
+    const maybeOcr = getExpectedPaths(userDir).ocrMyPdfPath;
+    try {
+      if (fs.existsSync(maybeOcr)) await fsp.chmod(maybeOcr, 0o755);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Persist metadata for future update checks (manifest version if known + zip ETag)
+  try {
+    await writeLocalManifest(userDir, remoteManifest || null, {}, zipMeta);
+  } catch {
+    // ignore
+  }
+
+  if (onProgress) onProgress({ status: 'done', percent: 100 });
+  return await getOfflineResourcesStatus();
 }
 
 async function updateOfflineResources({ onProgress } = {}) {
   const status = await getOfflineResourcesStatus();
   const baseDir = status.baseDir;
 
-  const remote = await fetchJson(status.manifestUrl);
+  let remote = null;
+  try {
+    remote = await fetchJson(status.manifestUrl);
+  } catch {
+    // No manifest: do a full zip reinstall (this is the only safe option without per-component URLs).
+    const res = await installOfflineResourcesLegacyZip({ onProgress, remoteManifest: null });
+    return { ...res, updated: true, latestVersion: null, message: 'Offline pack manifest not available; re-downloaded full pack.' };
+  }
   const platformKey = getPlatformKey();
   const components = [
     ...(remote?.components?.common || []),
@@ -317,9 +442,8 @@ async function updateOfflineResources({ onProgress } = {}) {
 
   // If the manifest doesn't define components, fall back to the full zip path.
   if (!components.length) {
-    if (onProgress) onProgress({ status: 'downloading', message: 'Downloading offline pack…', percent: 0 });
-    const res = await installOfflineResources();
-    return { ...res, updated: true, latestVersion: remote?.version || null };
+    const res = await installOfflineResourcesLegacyZip({ onProgress, remoteManifest: remote });
+    return { ...res, updated: true, latestVersion: remote?.version || null, message: 'Offline pack manifest did not define components; re-downloaded full pack.' };
   }
 
   const tmpBase = await fsp.mkdtemp(path.join(os.tmpdir(), 'offline-components-'));
@@ -385,7 +509,7 @@ async function updateOfflineResources({ onProgress } = {}) {
     }
   }
 
-  await writeLocalManifest(baseDir, remote, componentsInstalled);
+  await writeLocalManifest(baseDir, remote, componentsInstalled, null);
   if (onProgress) onProgress({ status: 'done', percent: 100 });
 
   const newStatus = await getOfflineResourcesStatus();
@@ -413,38 +537,7 @@ async function installOfflineResources() {
   } catch {
     // ignore and fall back to legacy zip install
   }
-
-  const url = status.url;
-  const tmpBase = await fsp.mkdtemp(path.join(os.tmpdir(), 'offline-pack-'));
-  const zipPath = path.join(tmpBase, 'offline-pack.zip');
-  const extractDir = path.join(tmpBase, 'extract');
-
-  await downloadToFile(url, zipPath);
-  await extractZip(zipPath, extractDir);
-
-  const extractedResources = path.join(extractDir, 'resources');
-  if (!fs.existsSync(extractedResources)) {
-    throw new Error('Offline pack zip must contain a top-level resources/ folder.');
-  }
-
-  const userDir = getUserOfflineResourcesDir();
-  await fsp.rm(userDir, { recursive: true, force: true });
-  await fsp.mkdir(userDir, { recursive: true });
-
-  // Copy extracted resources/* -> userDir/*
-  await fsp.cp(extractedResources, userDir, { recursive: true });
-
-  // Ensure mac binaries are executable if present
-  if (process.platform !== 'win32') {
-    const maybeLlama = getExpectedPaths(userDir).llamaPath;
-    try {
-      await fsp.chmod(maybeLlama, 0o755);
-    } catch {
-      // ignore
-    }
-  }
-
-  return await getOfflineResourcesStatus();
+  return await installOfflineResourcesLegacyZip({});
 }
 
 async function installOfflineResourcesFromZip(zipPath) {
