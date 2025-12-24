@@ -114,6 +114,86 @@ jobs:
           pattern: desktop-*
           merge-multiple: true
 
+      - name: Normalize updater artifact names (match latest*.yml)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          import shutil
+          from pathlib import Path
+
+          root = Path(".")
+
+          def parse_yaml(path: Path):
+            txt = path.read_text(encoding="utf-8", errors="ignore")
+            version = re.search(r"^version:\s*([0-9.]+)\s*$", txt, re.M)
+            version = version.group(1).strip() if version else None
+            urls = [m.group(1).strip() for m in re.finditer(r"^\s*-\s*url:\s*(.+)\s*$", txt, re.M)]
+            main_path = re.search(r"^path:\s*(.+)\s*$", txt, re.M)
+            main_path = main_path.group(1).strip() if main_path else None
+            return version, main_path, urls
+
+          def find_one(pred):
+            matches = [p for p in root.rglob("*") if p.is_file() and pred(p)]
+            # Prefer shallower paths (closer to root)
+            matches.sort(key=lambda p: (len(p.parts), str(p)))
+            return matches[0] if matches else None
+
+          def ensure_file_named(target_name: str, version: str | None):
+            target = root / target_name
+            if target.exists():
+              return
+            suffix = Path(target_name).suffix
+            # Heuristics: find file by suffix + version substring + key words
+            key = target_name.lower()
+            def pred(p: Path):
+              name = p.name.lower()
+              if not name.endswith(suffix):
+                return False
+              if version and version not in name:
+                return False
+              # try to match important tokens
+              if "setup" in key and "setup" not in name:
+                return False
+              if key.endswith(".dmg") and ".dmg" not in name:
+                return False
+              if key.endswith(".zip") and ".zip" not in name:
+                return False
+              return True
+            src = find_one(pred)
+            if not src:
+              raise SystemExit(f"Could not find source file for expected updater artifact: {target_name}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(src), str(target))
+
+          # Windows updater metadata
+          latest = find_one(lambda p: p.name == "latest.yml")
+          if latest:
+            v, main_path, urls = parse_yaml(latest)
+            # Ensure primary path exists
+            if main_path:
+              ensure_file_named(main_path, v)
+              # blockmap must match the *renamed* installer
+              ensure_file_named(main_path + ".blockmap", v)
+            for u in urls:
+              ensure_file_named(u, v)
+              ensure_file_named(u + ".blockmap", v)
+
+          # macOS updater metadata
+          latest_mac = find_one(lambda p: p.name == "latest-mac.yml")
+          if latest_mac:
+            v, main_path, urls = parse_yaml(latest_mac)
+            if main_path:
+              ensure_file_named(main_path, v)
+              ensure_file_named(main_path + ".blockmap", v)
+            for u in urls:
+              ensure_file_named(u, v)
+              ensure_file_named(u + ".blockmap", v)
+
+          print("Updater artifact normalization complete.")
+          PY
+
       - name: Publish GitHub Release (tag push)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2

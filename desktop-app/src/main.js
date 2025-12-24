@@ -191,7 +191,9 @@ app.on('ready', () => {
       // ignore
     }
     const result = await autoUpdater.checkForUpdates();
-    return { ok: true, result };
+    // IMPORTANT: Don't return the raw UpdateCheckResult over IPC; it contains non-cloneable objects.
+    const safeUpdateInfo = result?.updateInfo ? JSON.parse(JSON.stringify(result.updateInfo)) : null;
+    return { ok: true, updateInfo: safeUpdateInfo };
   });
   ipcMain.handle('update:quitAndInstall', async () => {
     if (isDev) {
