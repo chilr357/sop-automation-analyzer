@@ -1,0 +1,21 @@
+{
+  "ocr": {
+    "windows": {
+      "url": "",
+      "binaryNameHints": ["ocrmypdf.exe"],
+      "notes": "Provide a URL to a zip that contains a portable OCRmyPDF bundle for Windows."
+    },
+    "macArm64": {
+      "url": "",
+      "binaryNameHints": ["ocrmypdf"],
+      "notes": "Provide a URL to a zip that contains a portable OCRmyPDF bundle for macOS arm64."
+    },
+    "macX64": {
+      "url": "",
+      "binaryNameHints": ["ocrmypdf"],
+      "notes": "Provide a URL to a zip that contains a portable OCRmyPDF bundle for macOS x64."
+    }
+  }
+}
+
+

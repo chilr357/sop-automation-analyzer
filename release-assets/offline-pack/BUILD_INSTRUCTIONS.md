@@ -62,6 +62,23 @@ Then build the component artifacts:
 node scripts/build-offline-pack-manifest.mjs --version v1 --out release-assets/offline-pack-components
 ```
 
+### Optional: include a portable “OCR Tools Pack”
+
+If you have a prebuilt portable OCR bundle zip per platform, you can download/install it into:
+
+- `desktop-app/resources/ocr/win-x64/` (must include `ocrmypdf.exe`)
+- `desktop-app/resources/ocr/mac-arm64/` (must include `ocrmypdf`)
+- `desktop-app/resources/ocr/mac-x64/` (optional)
+
+1) Copy `scripts/ocr-tools.config.example.json` to `scripts/ocr-tools.config.json` and paste your bundle URLs.
+2) Run:
+
+```bash
+node scripts/fetch-ocr-tools.mjs --config scripts/ocr-tools.config.json
+```
+
+Then re-run `build-offline-pack-manifest.mjs` so it produces `ocr-*.zip` components automatically.
+
 ### 2) Upload to Supabase Storage (public bucket)
 
 This uploads:
