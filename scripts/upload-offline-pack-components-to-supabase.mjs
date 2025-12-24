@@ -88,43 +88,6 @@ function getTusEndpointFromSupabaseUrl(supabaseUrl) {
   return `https://${ref}.storage.supabase.co/storage/v1/upload/resumable`;
 }
 
-function createFileUrlStorage(storagePath) {
-  const abs = path.isAbsolute(storagePath) ? storagePath : path.join(process.cwd(), storagePath);
-  return {
-    async getItem(key) {
-      try {
-        const raw = await fsp.readFile(abs, 'utf8');
-        const json = JSON.parse(raw);
-        return json?.[key] ?? null;
-      } catch {
-        return null;
-      }
-    },
-    async setItem(key, value) {
-      let json = {};
-      try {
-        const raw = await fsp.readFile(abs, 'utf8');
-        json = JSON.parse(raw) || {};
-      } catch {
-        // ignore
-      }
-      json[key] = value;
-      await fsp.mkdir(path.dirname(abs), { recursive: true });
-      await fsp.writeFile(abs, JSON.stringify(json, null, 2), 'utf8');
-    },
-    async removeItem(key) {
-      try {
-        const raw = await fsp.readFile(abs, 'utf8');
-        const json = JSON.parse(raw) || {};
-        delete json[key];
-        await fsp.writeFile(abs, JSON.stringify(json, null, 2), 'utf8');
-      } catch {
-        // ignore
-      }
-    }
-  };
-}
-
 async function uploadObjectTusResumable({ supabaseUrl, key, bucket, objectPath, filePath, contentType, overwrite }) {
   // Lazy import so this script can still run without tus-js-client for small uploads.
   let tusMod;
@@ -139,7 +102,6 @@ async function uploadObjectTusResumable({ supabaseUrl, key, bucket, objectPath, 
 
   const stat = fs.statSync(filePath);
   const endpoint = getTusEndpointFromSupabaseUrl(supabaseUrl);
-  const urlStorage = createFileUrlStorage(path.join('.tus-cache', 'supabase-storage.json'));
 
   console.log(`Resumable upload (TUS) -> ${bucket}/${objectPath} (${stat.size} bytes)`);
   console.log(`Endpoint: ${endpoint}`);
@@ -157,7 +119,6 @@ async function uploadObjectTusResumable({ supabaseUrl, key, bucket, objectPath, 
       },
       uploadDataDuringCreation: true,
       removeFingerprintOnSuccess: true,
-      urlStorage,
       metadata: {
         bucketName: bucket,
         objectName: objectPath,
@@ -176,12 +137,9 @@ async function uploadObjectTusResumable({ supabaseUrl, key, bucket, objectPath, 
       }
     });
 
-    upload.findPreviousUploads().then((previous) => {
-      if (previous && previous.length) {
-        upload.resumeFromPreviousUpload(previous[0]);
-      }
-      upload.start();
-    }).catch(reject);
+    // Note: without a persistent urlStorage, uploads will still retry and continue within this run,
+    // but will not resume across script restarts.
+    upload.start();
   });
 }
 
