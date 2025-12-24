@@ -20,6 +20,7 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
   const [isUpdatingOffline, setIsUpdatingOffline] = useState(false);
   const [ocrTools, setOcrTools] = useState<{ available: boolean; installUrl: string } | null>(null);
   const [ocrToolsMessage, setOcrToolsMessage] = useState<string | null>(null);
+  const [isInstallingOcrPack, setIsInstallingOcrPack] = useState(false);
 
   const refreshOfflineStatus = useCallback(async () => {
     let cancelled = false;
@@ -252,6 +253,30 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
                     type="button"
                     onClick={async () => {
                       setOcrToolsMessage(null);
+                      setIsInstallingOcrPack(true);
+                      try {
+                        const res = await window.desktopAPI?.installOcrToolsPack?.();
+                        if (res && res.ocrAvailable) {
+                          setOcrToolsMessage('OCR Tools Pack installed.');
+                        } else {
+                          setOcrToolsMessage(res?.message || 'OCR Tools Pack install attempted. Click Refresh to re-check status.');
+                        }
+                      } catch (e) {
+                        const msg = e instanceof Error ? e.message : 'Failed to install OCR Tools Pack.';
+                        setOcrToolsMessage(msg);
+                      } finally {
+                        setIsInstallingOcrPack(false);
+                      }
+                    }}
+                    disabled={isLoading || isUpdatingOffline || isInstallingOcrPack}
+                    className="bg-yellow-600 text-black font-semibold py-2 px-4 rounded-md hover:bg-yellow-500 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                  >
+                    {isInstallingOcrPack ? 'Installing OCR Pack…' : 'Install OCR Tools Pack'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setOcrToolsMessage(null);
                       const url = ocrTools.installUrl;
                       try {
                         const res = await window.desktopAPI?.openExternal?.(url);
@@ -271,7 +296,7 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
                     disabled={isLoading}
                     className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
                   >
-                    Install OCR Tools
+                    Install System OCR Tools
                   </button>
                 </div>
                 {ocrToolsMessage ? <div className="mt-2 text-xs text-yellow-200">{ocrToolsMessage}</div> : null}

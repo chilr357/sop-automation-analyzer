@@ -422,7 +422,7 @@ async function installOfflineResourcesLegacyZip({ onProgress, remoteManifest } =
   return await getOfflineResourcesStatus();
 }
 
-async function updateOfflineResources({ onProgress } = {}) {
+async function updateOfflineResources({ onProgress, onlyComponents, force } = {}) {
   const status = await getOfflineResourcesStatus();
   const baseDir = status.baseDir;
 
@@ -446,13 +446,47 @@ async function updateOfflineResources({ onProgress } = {}) {
     return { ...res, updated: true, latestVersion: remote?.version || null, message: 'Offline pack manifest did not define components; re-downloaded full pack.' };
   }
 
+  // Load prior local component state so we can skip unchanged downloads.
+  let localManifest = null;
+  try {
+    const text = await fsp.readFile(getLocalManifestPath(baseDir), 'utf8');
+    localManifest = JSON.parse(text);
+  } catch {
+    // ignore
+  }
+  const prevComponents = localManifest?.components || {};
+
+  const shouldInstall = (c) => {
+    if (!c || !c.name) return false;
+    const prev = prevComponents[c.name];
+    // install if never installed, or metadata changed
+    return !prev || prev.url !== c.url || prev.sha256 !== c.sha256 || prev.version !== c.version;
+  };
+
+  // Support "install only selected components" (e.g., OCR Tools Pack) while skipping unchanged by default.
+  const onlyNames = Array.isArray(onlyComponents) ? onlyComponents : null;
+  const forceInstall = !!force;
+  const targetComponents = components
+    .filter((c) => c && c.name && c.url && c.path)
+    .filter((c) => (onlyNames ? onlyNames.includes(c.name) : true))
+    .filter((c) => (forceInstall ? true : shouldInstall(c)));
+
+  if (onlyNames && targetComponents.length === 0) {
+    return { ...status, updated: false, latestVersion: remote?.version || null, message: 'Requested component(s) are not present in the current manifest, or already installed.' };
+  }
+  if (!onlyNames && targetComponents.length === 0) {
+    // Nothing to do.
+    await writeLocalManifest(baseDir, remote, prevComponents, null);
+    return { ...status, updated: false, latestVersion: remote?.version || null, message: 'Offline pack is already up to date.' };
+  }
+
   const tmpBase = await fsp.mkdtemp(path.join(os.tmpdir(), 'offline-components-'));
   const componentsInstalled = {};
 
   let done = 0;
-  const total = components.length;
+  const total = targetComponents.length;
 
-  for (const c of components) {
+  for (const c of targetComponents) {
     done++;
     const basePercent = ((done - 1) / total) * 100;
     if (onProgress) {
@@ -509,7 +543,9 @@ async function updateOfflineResources({ onProgress } = {}) {
     }
   }
 
-  await writeLocalManifest(baseDir, remote, componentsInstalled, null);
+  // Merge previous component metadata with newly installed ones.
+  const mergedComponents = { ...(prevComponents || {}), ...(componentsInstalled || {}) };
+  await writeLocalManifest(baseDir, remote, mergedComponents, null);
   if (onProgress) onProgress({ status: 'done', percent: 100 });
 
   const newStatus = await getOfflineResourcesStatus();

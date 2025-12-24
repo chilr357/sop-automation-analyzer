@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('desktopAPI', {
   checkOfflinePackUpdate: () => ipcRenderer.invoke('offline:checkUpdate'),
   updateOfflinePack: () => ipcRenderer.invoke('offline:update'),
   getOcrToolsStatus: () => ipcRenderer.invoke('offline:ocrToolsStatus'),
+  installOcrToolsPack: () => ipcRenderer.invoke('offline:installOcrPack'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   copyToClipboard: (text) => ipcRenderer.invoke('clipboard:writeText', text),
   onOfflineUpdateStatus: (callback) => {

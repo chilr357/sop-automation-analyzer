@@ -227,8 +227,8 @@ async function main() {
       const arr = manifest.components.platform[key] || [];
       for (const c of arr) {
         if (!c || c.type !== 'zip') continue;
-        // Map `llama-<platform>.zip`
-        const expectedZip = `llama-${key}.zip`;
+        // Map `<component-name>.zip` (e.g., llama-win-x64.zip, ocr-win-x64.zip)
+        const expectedZip = `${c.name}.zip`;
         if (componentUrlByName.has(expectedZip)) {
           c.url = componentUrlByName.get(expectedZip);
         }

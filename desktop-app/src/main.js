@@ -231,6 +231,27 @@ app.on('ready', () => {
     return res;
   });
 
+  ipcMain.handle('offline:installOcrPack', async () => {
+    const send = (payload) => {
+      try {
+        mainWindow?.webContents.send('offline:updateStatus', payload);
+      } catch {
+        // ignore
+      }
+    };
+    const platformKey = process.platform === 'darwin'
+      ? (process.arch === 'arm64' ? 'mac-arm64' : 'mac-x64')
+      : (process.platform === 'win32' ? 'win-x64' : `${process.platform}-${process.arch}`);
+    const componentName = `ocr-${platformKey}`;
+    send({ status: 'checking', component: componentName, message: 'Checking OCR Tools Pack…', percent: 0 });
+    const res = await updateOfflineResources({
+      onlyComponents: [componentName],
+      force: true,
+      onProgress: (p) => send({ ...p, component: componentName })
+    });
+    return res;
+  });
+
   ipcMain.handle('offline:installFromZip', async (_event, zipPath) => {
     const result = await installOfflineResourcesFromZip(zipPath);
     return result;

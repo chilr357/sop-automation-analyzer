@@ -29,6 +29,7 @@ declare global {
       updateOfflinePack: () => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string; manifestUrl?: string; installedPackVersion?: string | null; ocrAvailable?: boolean; updated?: boolean; latestVersion?: string | null }>;
       onOfflineUpdateStatus: (callback: (payload: { status: string; percent?: number; component?: string; message?: string }) => void) => () => void;
       getOcrToolsStatus: () => Promise<{ ok: boolean; available: boolean; installUrl: string; message?: string }>;
+      installOcrToolsPack: () => Promise<{ installed: boolean; missing: string[]; baseDir: string; url: string; manifestUrl?: string; installedPackVersion?: string | null; ocrAvailable?: boolean; updated?: boolean; latestVersion?: string | null; message?: string }>;
       openExternal: (url: string) => Promise<{ ok: boolean; message?: string }>;
       copyToClipboard: (text: string) => Promise<{ ok: boolean; message?: string }>;
 

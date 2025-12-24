@@ -9,6 +9,9 @@
  *       llama-win-x64.zip
  *       llama-mac-arm64.zip
  *       llama-mac-x64.zip (optional if present)
+ *       ocr-win-x64.zip (optional if present)
+ *       ocr-mac-arm64.zip (optional if present)
+ *       ocr-mac-x64.zip (optional if present)
  *     resources/
  *       models/model-8b-q4.gguf   (hardlink/copy)
  *
@@ -140,6 +143,35 @@ async function main() {
       extractTo: path.join('llama', p.key),
       // path is required by the app schema; for zip components we keep it informational.
       path: path.join('llama', p.key),
+      version: null,
+      sha256: sha
+    });
+  }
+
+  // Optional: OCR Tools Pack per platform.
+  // Expected folder layout in desktop-app/resources:
+  //   resources/ocr/<platformKey>/... (must include ocrmypdf(.exe) + any portable deps)
+  const ocrPlatforms = [
+    { key: 'win-x64', rel: path.join('ocr', 'win-x64'), out: 'ocr-win-x64.zip' },
+    { key: 'mac-arm64', rel: path.join('ocr', 'mac-arm64'), out: 'ocr-mac-arm64.zip' },
+    { key: 'mac-x64', rel: path.join('ocr', 'mac-x64'), out: 'ocr-mac-x64.zip' }
+  ];
+
+  for (const p of ocrPlatforms) {
+    const abs = path.join(resourcesDir, p.rel);
+    if (!fs.existsSync(abs)) continue;
+    const outZip = path.join(componentsDir, p.out);
+    console.log(`Creating ${outZip} from ${abs}`);
+    await zipDirContents({ cwd: resourcesDir, relPath: p.rel, outZip });
+    const sha = await sha256File(outZip);
+    platformComponents[p.key] = platformComponents[p.key] || [];
+    platformComponents[p.key].push({
+      name: `ocr-${p.key}`,
+      type: 'zip',
+      url: '',
+      // Extract into baseDir/ocr/<platformKey>/...
+      extractTo: path.join('ocr', p.key),
+      path: path.join('ocr', p.key),
       version: null,
       sha256: sha
     });
