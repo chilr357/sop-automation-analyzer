@@ -73,6 +73,118 @@ function publicUrl(supabaseUrl, bucket, objectPath) {
   return `${supabaseUrl}/storage/v1/object/public/${bucket}/${objectPath}`;
 }
 
+function getProjectRefFromSupabaseUrl(supabaseUrl) {
+  const u = new URL(supabaseUrl);
+  const host = u.hostname; // <ref>.supabase.co
+  const ref = host.split('.')[0];
+  if (!ref) throw new Error(`Could not parse project ref from SUPABASE_URL host: ${host}`);
+  return ref;
+}
+
+function getTusEndpointFromSupabaseUrl(supabaseUrl) {
+  // Recommended by Supabase docs for best performance:
+  // https://<project-ref>.storage.supabase.co/storage/v1/upload/resumable
+  const ref = getProjectRefFromSupabaseUrl(supabaseUrl);
+  return `https://${ref}.storage.supabase.co/storage/v1/upload/resumable`;
+}
+
+function createFileUrlStorage(storagePath) {
+  const abs = path.isAbsolute(storagePath) ? storagePath : path.join(process.cwd(), storagePath);
+  return {
+    async getItem(key) {
+      try {
+        const raw = await fsp.readFile(abs, 'utf8');
+        const json = JSON.parse(raw);
+        return json?.[key] ?? null;
+      } catch {
+        return null;
+      }
+    },
+    async setItem(key, value) {
+      let json = {};
+      try {
+        const raw = await fsp.readFile(abs, 'utf8');
+        json = JSON.parse(raw) || {};
+      } catch {
+        // ignore
+      }
+      json[key] = value;
+      await fsp.mkdir(path.dirname(abs), { recursive: true });
+      await fsp.writeFile(abs, JSON.stringify(json, null, 2), 'utf8');
+    },
+    async removeItem(key) {
+      try {
+        const raw = await fsp.readFile(abs, 'utf8');
+        const json = JSON.parse(raw) || {};
+        delete json[key];
+        await fsp.writeFile(abs, JSON.stringify(json, null, 2), 'utf8');
+      } catch {
+        // ignore
+      }
+    }
+  };
+}
+
+async function uploadObjectTusResumable({ supabaseUrl, key, bucket, objectPath, filePath, contentType, overwrite }) {
+  // Lazy import so this script can still run without tus-js-client for small uploads.
+  let tusMod;
+  try {
+    tusMod = await import('tus-js-client');
+  } catch (e) {
+    throw new Error(
+      `Missing dependency tus-js-client. Install it first: npm i -D tus-js-client. Original error: ${e?.message || String(e)}`
+    );
+  }
+  const tus = tusMod.default || tusMod;
+
+  const stat = fs.statSync(filePath);
+  const endpoint = getTusEndpointFromSupabaseUrl(supabaseUrl);
+  const urlStorage = createFileUrlStorage(path.join('.tus-cache', 'supabase-storage.json'));
+
+  console.log(`Resumable upload (TUS) -> ${bucket}/${objectPath} (${stat.size} bytes)`);
+  console.log(`Endpoint: ${endpoint}`);
+
+  return await new Promise((resolve, reject) => {
+    const fileStream = fs.createReadStream(filePath);
+    const upload = new tus.Upload(fileStream, {
+      endpoint,
+      uploadSize: stat.size,
+      retryDelays: [0, 3000, 5000, 10000, 20000],
+      headers: {
+        authorization: `Bearer ${key}`,
+        apikey: key,
+        ...(overwrite ? { 'x-upsert': 'true' } : {})
+      },
+      uploadDataDuringCreation: true,
+      removeFingerprintOnSuccess: true,
+      urlStorage,
+      metadata: {
+        bucketName: bucket,
+        objectName: objectPath,
+        contentType: contentType || 'application/octet-stream',
+        cacheControl: '3600'
+      },
+      chunkSize: 6 * 1024 * 1024, // Supabase requirement (currently)
+      onError: (err) => reject(err),
+      onProgress: (bytesUploaded, bytesTotal) => {
+        const pct = bytesTotal ? ((bytesUploaded / bytesTotal) * 100).toFixed(2) : '0';
+        process.stdout.write(`\rUploaded ${bytesUploaded}/${bytesTotal} bytes (${pct}%)`);
+      },
+      onSuccess: () => {
+        process.stdout.write('\n');
+        resolve();
+      }
+    });
+
+    upload.findPreviousUploads().then((previous) => {
+      if (previous && previous.length) {
+        upload.resumeFromPreviousUpload(previous[0]);
+      }
+      upload.start();
+    }).catch(reject);
+  });
+}
+
 async function main() {
   const { bucket, prefix, dir, overwrite } = parseArgs(process.argv);
   const supabaseUrlRaw = must(process.env.SUPABASE_URL, 'SUPABASE_URL');
@@ -96,15 +208,29 @@ async function main() {
   if (!fs.existsSync(modelFile)) throw new Error(`Model file not found: ${modelFile}`);
   const modelObject = joinObjectPath(prefix, 'resources', 'models', 'model-8b-q4.gguf');
   console.log(`Uploading model -> ${modelObject}`);
-  await uploadObject({
-    supabaseUrl,
-    key,
-    bucket,
-    objectPath: modelObject,
-    filePath: modelFile,
-    contentType: 'application/octet-stream',
-    overwrite
-  });
+  const modelStat = fs.statSync(modelFile);
+  if (modelStat.size > 25 * 1024 * 1024) {
+    // Use resumable upload for large files (recommended by Supabase; avoids mid-stream disconnects).
+    await uploadObjectTusResumable({
+      supabaseUrl,
+      key,
+      bucket,
+      objectPath: modelObject,
+      filePath: modelFile,
+      contentType: 'application/octet-stream',
+      overwrite
+    });
+  } else {
+    await uploadObject({
+      supabaseUrl,
+      key,
+      bucket,
+      objectPath: modelObject,
+      filePath: modelFile,
+      contentType: 'application/octet-stream',
+      overwrite
+    });
+  }
   const modelUrl = publicUrl(supabaseUrl, bucket, modelObject);
 
   // 2) Upload component zips

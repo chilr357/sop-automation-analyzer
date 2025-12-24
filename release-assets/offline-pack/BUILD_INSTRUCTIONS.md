@@ -70,6 +70,8 @@ This uploads:
 - `manifest.json` to drive updates
 
 ```bash
+npm i
+
 SUPABASE_URL="https://<project-ref>.supabase.co" \
 SUPABASE_SERVICE_ROLE_KEY="..." \
 node scripts/upload-offline-pack-components-to-supabase.mjs \
