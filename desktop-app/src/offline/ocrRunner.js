@@ -1,6 +1,7 @@
 const os = require('node:os');
 const path = require('node:path');
 const fsp = require('node:fs/promises');
+const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const { getUserOfflineResourcesDir, getExpectedPaths } = require('./offlineResourcesInstaller');
 
@@ -21,15 +22,59 @@ async function hasOcrMyPdf() {
   try {
     const baseDir = getUserOfflineResourcesDir();
     const expected = getExpectedPaths(baseDir);
-    if (expected?.ocrMyPdfPath) {
+    const ocrDir = path.dirname(expected.ocrMyPdfPath);
+
+    // 1) Native bundled ocrmypdf(.exe)
+    if (expected?.ocrMyPdfPath && fs.existsSync(expected.ocrMyPdfPath)) {
       const resBundled = await run(expected.ocrMyPdfPath, ['--version']);
       if (resBundled.code === 0) return true;
+    }
+
+    // 2) Portable Python bundle fallback:
+    //    offline-resources/ocr/<platform>/python/python.exe -m ocrmypdf
+    const pythonExe = process.platform === 'win32'
+      ? path.join(ocrDir, 'python', 'python.exe')
+      : path.join(ocrDir, 'python', 'bin', 'python3');
+    if (fs.existsSync(pythonExe)) {
+      const env = buildPortableOcrEnv(ocrDir);
+      const resPy = await run(pythonExe, ['-m', 'ocrmypdf', '--version'], { env, windowsHide: true });
+      if (resPy.code === 0) return true;
     }
   } catch {
     // ignore
   }
   const res = await run('ocrmypdf', ['--version']);
   return res.code === 0;
+}
+
+function buildPortableOcrEnv(ocrDir) {
+  const env = { ...process.env };
+  const pathParts = [];
+
+  // Provide bundled deps first so OCRmyPDF finds them without system install.
+  if (process.platform === 'win32') {
+    pathParts.push(
+      ocrDir,
+      path.join(ocrDir, 'python'),
+      path.join(ocrDir, 'tesseract'),
+      path.join(ocrDir, 'ghostscript', 'bin')
+    );
+    // Tesseract language data (English-only in our pack)
+    env.TESSDATA_PREFIX = path.join(ocrDir, 'tesseract', 'tessdata');
+  } else {
+    pathParts.push(
+      ocrDir,
+      path.join(ocrDir, 'python', 'bin'),
+      path.join(ocrDir, 'tesseract', 'bin'),
+      path.join(ocrDir, 'ghostscript', 'bin')
+    );
+    env.TESSDATA_PREFIX = path.join(ocrDir, 'tesseract', 'share', 'tessdata');
+    // Minimal hints for dynamic libs if we end up bundling dylibs under ocrDir/lib
+    env.DYLD_FALLBACK_LIBRARY_PATH = [path.join(ocrDir, 'lib'), env.DYLD_FALLBACK_LIBRARY_PATH].filter(Boolean).join(':');
+  }
+
+  env.PATH = [...pathParts, env.PATH].filter(Boolean).join(path.delimiter);
+  return env;
 }
 
 /**
@@ -57,18 +102,38 @@ async function ocrToSearchablePdfBestEffort(inputPdfPath) {
 
   // Prefer bundled OCR tool if present.
   let cmd = 'ocrmypdf';
+  let cmdArgsPrefix = [];
+  let envOverride = null;
   try {
     const baseDir = getUserOfflineResourcesDir();
     const expected = getExpectedPaths(baseDir);
-    if (expected?.ocrMyPdfPath) {
+    const ocrDir = path.dirname(expected.ocrMyPdfPath);
+
+    if (expected?.ocrMyPdfPath && fs.existsSync(expected.ocrMyPdfPath)) {
       const test = await run(expected.ocrMyPdfPath, ['--version'], { windowsHide: true });
-      if (test.code === 0) cmd = expected.ocrMyPdfPath;
+      if (test.code === 0) {
+        cmd = expected.ocrMyPdfPath;
+        envOverride = buildPortableOcrEnv(ocrDir);
+      }
+    } else {
+      // Portable Python bundle fallback
+      const pythonExe = process.platform === 'win32'
+        ? path.join(ocrDir, 'python', 'python.exe')
+        : path.join(ocrDir, 'python', 'bin', 'python3');
+      if (fs.existsSync(pythonExe)) {
+        const test = await run(pythonExe, ['-m', 'ocrmypdf', '--version'], { windowsHide: true, env: buildPortableOcrEnv(ocrDir) });
+        if (test.code === 0) {
+          cmd = pythonExe;
+          cmdArgsPrefix = ['-m', 'ocrmypdf'];
+          envOverride = buildPortableOcrEnv(ocrDir);
+        }
+      }
     }
   } catch {
     // ignore
   }
 
-  const res = await run(cmd, args, { windowsHide: true });
+  const res = await run(cmd, [...cmdArgsPrefix, ...args], { windowsHide: true, env: envOverride || process.env });
   if (res.code === 0) return outputPdfPath;
   return null;
 }
