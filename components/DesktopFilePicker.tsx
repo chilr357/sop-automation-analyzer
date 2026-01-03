@@ -212,6 +212,22 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
                 Refresh
               </button>
             </div>
+            {offlineUpdateStatus?.status === 'checking' ||
+            offlineUpdateStatus?.status === 'downloading' ||
+            offlineUpdateStatus?.status === 'installing' ? (
+              <div className="text-yellow-100/90">
+                {offlineUpdateStatus.message || `${offlineUpdateStatus.status}…`}
+                {offlineUpdateStatus.component ? <span className="text-yellow-200"> ({offlineUpdateStatus.component})</span> : null}
+                {typeof offlineUpdateStatus.percent === 'number' ? (
+                  <div className="mt-2 w-full bg-black/30 rounded h-2 overflow-hidden">
+                    <div
+                      className="h-2 bg-yellow-400"
+                      style={{ width: `${Math.max(0, Math.min(100, offlineUpdateStatus.percent))}%` }}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {offlineInstallError && (
               <div className="text-red-200">
                 {offlineInstallError}
@@ -305,7 +321,9 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
                 {offlineUpdateInfo.message ? <div>{offlineUpdateInfo.message}</div> : null}
               </div>
             ) : null}
-            {offlineUpdateStatus?.status === 'downloading' || offlineUpdateStatus?.status === 'installing' ? (
+            {offlineUpdateStatus?.status === 'checking' ||
+            offlineUpdateStatus?.status === 'downloading' ||
+            offlineUpdateStatus?.status === 'installing' ? (
               <div className="text-green-100/80">
                 {offlineUpdateStatus.message || `${offlineUpdateStatus.status}…`}
                 {typeof offlineUpdateStatus.percent === 'number' ? (
