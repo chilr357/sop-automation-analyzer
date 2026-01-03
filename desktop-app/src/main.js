@@ -208,7 +208,18 @@ app.on('ready', () => {
   });
 
   ipcMain.handle('offline:install', async () => {
-    const result = await installOfflineResources();
+    const send = (payload) => {
+      try {
+        mainWindow?.webContents.send('offline:updateStatus', payload);
+      } catch {
+        // ignore
+      }
+    };
+    send({ status: 'checking', message: 'Preparing offline pack install…', percent: 0 });
+    const result = await installOfflineResources({
+      onProgress: (p) => send({ ...p })
+    });
+    send({ status: 'done', percent: 100 });
     return result;
   });
 
@@ -253,7 +264,16 @@ app.on('ready', () => {
   });
 
   ipcMain.handle('offline:installFromZip', async (_event, zipPath) => {
+    const send = (payload) => {
+      try {
+        mainWindow?.webContents.send('offline:updateStatus', payload);
+      } catch {
+        // ignore
+      }
+    };
+    send({ status: 'installing', message: 'Installing offline pack from ZIP…', percent: 80 });
     const result = await installOfflineResourcesFromZip(zipPath);
+    send({ status: 'done', percent: 100 });
     return result;
   });
 

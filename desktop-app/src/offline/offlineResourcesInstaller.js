@@ -179,13 +179,13 @@ async function runWindowsPowerShell(command) {
   await run(ps, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command]);
 }
 
-async function downloadToFile(url, destPath) {
+async function downloadToFile(url, destPath, { onProgress } = {}) {
   await fsp.mkdir(path.dirname(destPath), { recursive: true });
 
   // Prefer in-process streaming download so we can surface progress to the UI.
   // Fallback: PowerShell/curl if needed.
   try {
-    await downloadToFileNode(url, destPath);
+    await downloadToFileNode(url, destPath, { onProgress });
     return;
   } catch {
     // ignore and fall back
@@ -403,7 +403,14 @@ async function installOfflineResourcesLegacyZip({ onProgress, remoteManifest } =
   const zipPath = path.join(tmpBase, 'offline-pack.zip');
   const extractDir = path.join(tmpBase, 'extract');
 
-  await downloadToFile(url, zipPath);
+  await downloadToFile(url, zipPath, {
+    onProgress: (p) => {
+      if (!onProgress) return;
+      const pct = typeof p?.percent === 'number' ? p.percent : 0;
+      // Reserve ~0-85% for download, then 85-100% for install.
+      onProgress({ status: 'downloading', message: 'Downloading offline pack…', percent: Math.max(0, Math.min(85, pct * 0.85)) });
+    }
+  });
 
   if (onProgress) onProgress({ status: 'installing', message: 'Installing offline pack…', percent: 90 });
   await extractZip(zipPath, extractDir);
@@ -586,7 +593,7 @@ async function extractZip(zipPath, destDir) {
   await run('unzip', ['-q', '-o', zipPath, '-d', destDir]);
 }
 
-async function installOfflineResources() {
+async function installOfflineResources({ onProgress } = {}) {
   const status = await getOfflineResourcesStatus();
   if (status.installed) {
     return status;
@@ -594,11 +601,11 @@ async function installOfflineResources() {
 
   // Prefer manifest-based install when available so we can avoid re-downloading unchanged pieces later.
   try {
-    return await updateOfflineResources({});
+    return await updateOfflineResources({ onProgress });
   } catch {
     // ignore and fall back to legacy zip install
   }
-  return await installOfflineResourcesLegacyZip({});
+  return await installOfflineResourcesLegacyZip({ onProgress });
 }
 
 async function installOfflineResourcesFromZip(zipPath) {
@@ -619,6 +626,9 @@ async function installOfflineResourcesFromZip(zipPath) {
     throw new Error('Offline pack zip must contain a top-level resources/ folder.');
   }
 
+  // Best-effort progress for zip installs.
+  // (We don't currently stream unzip progress; show stage-based progress.)
+  // eslint-disable-next-line no-unused-vars
   const userDir = getUserOfflineResourcesDir();
   await fsp.rm(userDir, { recursive: true, force: true });
   await fsp.mkdir(userDir, { recursive: true });

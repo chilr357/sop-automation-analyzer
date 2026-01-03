@@ -116,6 +116,7 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
 
   const handleInstallOffline = useCallback(async () => {
     setOfflineInstallError(null);
+    setOfflineUpdateStatus(null);
     setIsInstallingOffline(true);
     try {
       const api = window.desktopAPI;
@@ -123,7 +124,7 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
         throw new Error('Offline installer is unavailable.');
       }
       const result = await api.installOfflineResources();
-      setOfflineStatus({ installed: result.installed, url: result.url, baseDir: result.baseDir });
+      setOfflineStatus({ installed: result.installed, url: result.url, baseDir: result.baseDir, ocrAvailable: !!result.ocrAvailable });
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to install offline resources.';
       setOfflineInstallError(msg);
@@ -134,6 +135,7 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
 
   const handleInstallOfflineFromZip = useCallback(async () => {
     setOfflineInstallError(null);
+    setOfflineUpdateStatus(null);
     setIsInstallingFromZip(true);
     try {
       const api = window.desktopAPI;
@@ -145,7 +147,7 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
         return;
       }
       const result = await api.installOfflineResourcesFromZip(zipPath);
-      setOfflineStatus({ installed: result.installed, url: result.url, baseDir: result.baseDir });
+      setOfflineStatus({ installed: result.installed, url: result.url, baseDir: result.baseDir, ocrAvailable: !!result.ocrAvailable });
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to install offline resources from zip.';
       setOfflineInstallError(msg);
