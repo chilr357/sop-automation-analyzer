@@ -11,16 +11,15 @@ interface DesktopFilePickerProps {
 export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading, onAnalyzePaths }) => {
   const [selectedFiles, setSelectedFiles] = useState<DesktopPickedFile[]>([]);
   const [pickError, setPickError] = useState<string | null>(null);
-  const [offlineStatus, setOfflineStatus] = useState<{ installed: boolean; url: string; baseDir?: string } | null>(null);
+  const [offlineStatus, setOfflineStatus] = useState<{ installed: boolean; url: string; baseDir?: string; ocrAvailable?: boolean } | null>(null);
   const [offlineInstallError, setOfflineInstallError] = useState<string | null>(null);
   const [isInstallingOffline, setIsInstallingOffline] = useState(false);
   const [isInstallingFromZip, setIsInstallingFromZip] = useState(false);
   const [offlineUpdateInfo, setOfflineUpdateInfo] = useState<{ installedVersion?: string | null; latestVersion?: string | null; needsUpdate?: boolean; message?: string } | null>(null);
   const [offlineUpdateStatus, setOfflineUpdateStatus] = useState<{ status: string; percent?: number; component?: string; message?: string } | null>(null);
   const [isUpdatingOffline, setIsUpdatingOffline] = useState(false);
-  const [ocrTools, setOcrTools] = useState<{ available: boolean; installUrl: string } | null>(null);
   const [ocrToolsMessage, setOcrToolsMessage] = useState<string | null>(null);
-  const [isInstallingOcrPack, setIsInstallingOcrPack] = useState(false);
+  const [isRepairingOcr, setIsRepairingOcr] = useState(false);
 
   const refreshOfflineStatus = useCallback(async () => {
     let cancelled = false;
@@ -28,7 +27,7 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
       try {
         const s = await window.desktopAPI?.getOfflineResourcesStatus?.();
         if (!cancelled && s) {
-          setOfflineStatus({ installed: s.installed, url: s.url, baseDir: s.baseDir });
+          setOfflineStatus({ installed: s.installed, url: s.url, baseDir: s.baseDir, ocrAvailable: !!s.ocrAvailable });
         }
       } catch {
         // ignore
@@ -42,24 +41,6 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
   React.useEffect(() => {
     void refreshOfflineStatus();
   }, [refreshOfflineStatus]);
-
-  React.useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await window.desktopAPI?.getOcrToolsStatus?.();
-        if (cancelled) return;
-        if (res?.ok && typeof res.available === 'boolean' && typeof res.installUrl === 'string') {
-          setOcrTools({ available: res.available, installUrl: res.installUrl });
-        }
-      } catch {
-        // ignore
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   React.useEffect(() => {
     const api = window.desktopAPI;
@@ -245,63 +226,42 @@ export const DesktopFilePicker: React.FC<DesktopFilePickerProps> = ({ isLoading,
                 <span className="text-green-100/80"> Installed at: {offlineStatus.baseDir}</span>
               ) : null}
             </div>
-            {ocrTools && !ocrTools.available ? (
-              <div className="text-green-100/80">
-                OCR tools: <span className="text-yellow-200">not installed</span>. Scanned/image PDFs may fail in Offline mode.
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setOcrToolsMessage(null);
-                      setIsInstallingOcrPack(true);
-                      try {
-                        const res = await window.desktopAPI?.installOcrToolsPack?.();
-                        if (res && res.ocrAvailable) {
-                          setOcrToolsMessage('OCR Tools Pack installed.');
-                        } else {
-                          setOcrToolsMessage(res?.message || 'OCR Tools Pack install attempted. Click Refresh to re-check status.');
-                        }
-                      } catch (e) {
-                        const msg = e instanceof Error ? e.message : 'Failed to install OCR Tools Pack.';
-                        setOcrToolsMessage(msg);
-                      } finally {
-                        setIsInstallingOcrPack(false);
+            <div className="text-green-100/80">
+              OCR tools: {offlineStatus.ocrAvailable ? <span className="text-green-200">included</span> : <span className="text-yellow-200">missing</span>}.
+              {offlineStatus.ocrAvailable ? (
+                <span> Scanned/image PDFs will be OCR’d automatically in Offline mode.</span>
+              ) : (
+                <span> Click “Update Offline Pack” to download OCR tools.</span>
+              )}
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setOcrToolsMessage(null);
+                    setIsRepairingOcr(true);
+                    try {
+                      const res = await window.desktopAPI?.installOcrToolsPack?.();
+                      if (res && res.ocrAvailable) {
+                        setOcrToolsMessage('OCR Tools Pack installed/repaired.');
+                        await refreshOfflineStatus();
+                      } else {
+                        setOcrToolsMessage(res?.message || 'OCR Tools Pack repair attempted. Click Refresh to re-check status.');
                       }
-                    }}
-                    disabled={isLoading || isUpdatingOffline || isInstallingOcrPack}
-                    className="bg-yellow-600 text-black font-semibold py-2 px-4 rounded-md hover:bg-yellow-500 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                  >
-                    {isInstallingOcrPack ? 'Installing OCR Pack…' : 'Install OCR Tools Pack'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setOcrToolsMessage(null);
-                      const url = ocrTools.installUrl;
-                      try {
-                        const res = await window.desktopAPI?.openExternal?.(url);
-                        if (res && !res.ok) {
-                          await window.desktopAPI?.copyToClipboard?.(url);
-                          setOcrToolsMessage(`Couldn’t open your browser. Link copied to clipboard: ${url}`);
-                        }
-                      } catch {
-                        try {
-                          await window.desktopAPI?.copyToClipboard?.(url);
-                          setOcrToolsMessage(`Couldn’t open your browser. Link copied to clipboard: ${url}`);
-                        } catch {
-                          setOcrToolsMessage(`Couldn’t open your browser. Please open this link manually: ${url}`);
-                        }
-                      }
-                    }}
-                    disabled={isLoading}
-                    className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
-                  >
-                    Install System OCR Tools
-                  </button>
-                </div>
-                {ocrToolsMessage ? <div className="mt-2 text-xs text-yellow-200">{ocrToolsMessage}</div> : null}
+                    } catch (e) {
+                      const msg = e instanceof Error ? e.message : 'Failed to repair OCR Tools Pack.';
+                      setOcrToolsMessage(msg);
+                    } finally {
+                      setIsRepairingOcr(false);
+                    }
+                  }}
+                  disabled={isLoading || isUpdatingOffline || isRepairingOcr}
+                  className="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-600 transition-all duration-300 disabled:bg-gray-500 disabled:cursor-not-allowed"
+                >
+                  {isRepairingOcr ? 'Repairing OCR…' : 'Repair OCR Tools'}
+                </button>
               </div>
-            ) : null}
+              {ocrToolsMessage ? <div className="mt-2 text-xs text-yellow-200">{ocrToolsMessage}</div> : null}
+            </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <button
                 type="button"

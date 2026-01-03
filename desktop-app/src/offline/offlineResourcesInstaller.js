@@ -42,15 +42,27 @@ function getExpectedPaths(baseDir) {
     : (process.platform === 'win32' ? 'win-x64' : `${process.platform}-${process.arch}`);
 
   const llamaBin = process.platform === 'win32' ? 'llama.exe' : 'llama';
+  const ocrDir = path.join(baseDir, 'ocr', platformKey);
 
   return {
     baseDir,
     modelPath: path.join(baseDir, 'models', 'model-8b-q4.gguf'),
     llamaPath: path.join(baseDir, 'llama', platformKey, llamaBin),
-    // Optional OCR tool (if bundled in the offline pack)
+    // OCR tool (bundled in the offline pack for production use)
     ocrMyPdfPath: process.platform === 'win32'
-      ? path.join(baseDir, 'ocr', platformKey, 'ocrmypdf.exe')
-      : path.join(baseDir, 'ocr', platformKey, 'ocrmypdf')
+      ? path.join(ocrDir, 'ocrmypdf.exe')
+      : path.join(ocrDir, 'ocrmypdf'),
+    // Portable Python-based OCR runtime (preferred for Windows packs we build)
+    ocrPythonPath: process.platform === 'win32'
+      ? path.join(ocrDir, 'python', 'python.exe')
+      : path.join(ocrDir, 'python', 'bin', 'python3'),
+    // Dependencies expected to be bundled for the portable OCR pack
+    tesseractPath: process.platform === 'win32'
+      ? path.join(ocrDir, 'tesseract', 'tesseract.exe')
+      : path.join(ocrDir, 'tesseract', 'bin', 'tesseract'),
+    ghostscriptPath: process.platform === 'win32'
+      ? path.join(ocrDir, 'ghostscript', 'bin', 'gswin64c.exe')
+      : path.join(ocrDir, 'ghostscript', 'bin', 'gs')
   };
 }
 
@@ -61,6 +73,19 @@ async function getOfflineResourcesStatus() {
   const missing = [];
   if (!fs.existsSync(expected.modelPath)) missing.push(expected.modelPath);
   if (!fs.existsSync(expected.llamaPath)) missing.push(expected.llamaPath);
+
+  // OCR is considered part of the production offline pack (most PDFs require OCR).
+  const hasOcrEntrypoint = fs.existsSync(expected.ocrMyPdfPath) || fs.existsSync(expected.ocrPythonPath);
+  const hasOcrDeps = fs.existsSync(expected.tesseractPath) && fs.existsSync(expected.ghostscriptPath);
+  const ocrAvailable = hasOcrEntrypoint && hasOcrDeps;
+  if (!ocrAvailable) {
+    if (!hasOcrEntrypoint) {
+      missing.push(expected.ocrMyPdfPath);
+      missing.push(expected.ocrPythonPath);
+    }
+    if (!fs.existsSync(expected.tesseractPath)) missing.push(expected.tesseractPath);
+    if (!fs.existsSync(expected.ghostscriptPath)) missing.push(expected.ghostscriptPath);
+  }
 
   let localManifest = null;
   try {
@@ -77,7 +102,7 @@ async function getOfflineResourcesStatus() {
     url: getOfflinePackUrl(),
     manifestUrl: getOfflinePackManifestUrl(),
     installedPackVersion: localManifest?.version || null,
-    ocrAvailable: fs.existsSync(expected.ocrMyPdfPath)
+    ocrAvailable
   };
 }
 
