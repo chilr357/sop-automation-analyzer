@@ -38,8 +38,9 @@ function parseArgs(argv) {
     getPipUrl: 'https://bootstrap.pypa.io/get-pip.py',
     // NOTE: These URLs may change over time; adjust if needed.
     // Tesseract (UB Mannheim) and Ghostscript (Artifex) are commonly distributed as installers.
-    tesseractInstallerUrl: '',
-    ghostscriptInstallerUrl: '',
+    tesseractInstallerUrl: 'https://digi.bib.uni-mannheim.de/tesseract/tesseract-ocr-w64-setup-v5.2.0.20220712.exe',
+    // Use Ghostscript installer (contains gswin64c.exe). The "ghostpcl-*.zip" archive is NOT Ghostscript.
+    ghostscriptInstallerUrl: 'https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs9550/gs9550w64.exe',
     ocrmypdfVersion: '16.6.0'
   };
   for (let i = 2; i < argv.length; i++) {
@@ -104,6 +105,28 @@ async function writePythonPth(pythonDir) {
   await fsp.writeFile(pth, out.join('\r\n') + '\r\n', 'utf8');
 }
 
+async function exists(p) {
+  try {
+    const st = await fsp.stat(p);
+    return !!st;
+  } catch {
+    return false;
+  }
+}
+
+async function pruneTessdataToEnglish(tesseractDir) {
+  // UB Mannheim layout typically includes: <dir>/tessdata/*.traineddata
+  const tessdata = path.join(tesseractDir, 'tessdata');
+  if (!(await exists(tessdata))) return;
+  const keep = new Set(['eng.traineddata', 'osd.traineddata']);
+  const files = await fsp.readdir(tessdata).catch(() => []);
+  for (const f of files) {
+    if (f.toLowerCase().endsWith('.traineddata') && !keep.has(f)) {
+      await fsp.rm(path.join(tessdata, f), { force: true });
+    }
+  }
+}
+
 async function main() {
   if (process.platform !== 'win32') {
     throw new Error('This script must be run on Windows.');
@@ -139,45 +162,37 @@ async function main() {
   await run(pythonExe, ['-m', 'pip', 'install', '--no-cache-dir', `ocrmypdf==${args.ocrmypdfVersion}`, '--target', sitePackages]);
 
   // 2) Tesseract + English tessdata (installer-based)
-  if (!args.tesseractInstallerUrl) {
-    console.log('NOTE: Skipping Tesseract install (no --tesseractInstallerUrl provided).');
-    console.log('Provide a UB Mannheim Tesseract installer URL and re-run to bundle it.');
-  } else {
-    const tesseractExe = path.join(tmpDir, 'tesseract-setup.exe');
-    const tesseractDir = path.join(outDir, 'tesseract');
-    await download(args.tesseractInstallerUrl, tesseractExe);
-    await ensureDir(tesseractDir);
-    // UB Mannheim installer is typically Inno Setup; this should install into a user-writable directory without admin.
-    await run(tesseractExe, [
+  const tesseractExe = path.join(tmpDir, 'tesseract-setup.exe');
+  const tesseractDir = path.join(outDir, 'tesseract');
+  console.log('Downloading Tesseract installer...');
+  await download(args.tesseractInstallerUrl, tesseractExe);
+  await ensureDir(tesseractDir);
+  // UB Mannheim installer is typically Inno Setup; this should install into a user-writable directory without admin.
+  await run(tesseractExe, [
+    '/VERYSILENT',
+    '/SUPPRESSMSGBOXES',
+    '/NORESTART',
+    `/DIR=${tesseractDir}`
+  ]);
+  await pruneTessdataToEnglish(tesseractDir);
+
+  // 3) Ghostscript (installer-based)
+  const gsExe = path.join(tmpDir, 'ghostscript-setup.exe');
+  const gsDir = path.join(outDir, 'ghostscript');
+  console.log('Downloading Ghostscript installer...');
+  await download(args.ghostscriptInstallerUrl, gsExe);
+  await ensureDir(gsDir);
+  // Ghostscript installer supports silent mode; install into local directory.
+  // Most Artifex releases are NSIS (/S) and accept /D= for directory.
+  try {
+    await run(gsExe, ['/S', `/D=${gsDir}`]);
+  } catch {
+    await run(gsExe, [
       '/VERYSILENT',
       '/SUPPRESSMSGBOXES',
       '/NORESTART',
-      `/DIR=${tesseractDir}`
+      `/DIR=${gsDir}`
     ]);
-  }
-
-  // 3) Ghostscript (installer-based)
-  if (!args.ghostscriptInstallerUrl) {
-    console.log('NOTE: Skipping Ghostscript install (no --ghostscriptInstallerUrl provided).');
-    console.log('Provide an Artifex Ghostscript installer URL and re-run to bundle it.');
-  } else {
-    const gsExe = path.join(tmpDir, 'ghostscript-setup.exe');
-    const gsDir = path.join(outDir, 'ghostscript');
-    await download(args.ghostscriptInstallerUrl, gsExe);
-    await ensureDir(gsDir);
-    // Ghostscript installer supports silent mode; install into local directory.
-    // Some Ghostscript builds are NSIS (/S) and accept /D= for directory; others are Inno (/DIR=).
-    // Try NSIS first, then Inno.
-    try {
-      await run(gsExe, ['/S', `/D=${gsDir}`]);
-    } catch {
-      await run(gsExe, [
-        '/VERYSILENT',
-        '/SUPPRESSMSGBOXES',
-        '/NORESTART',
-        `/DIR=${gsDir}`
-      ]);
-    }
   }
 
   console.log('Done. Output folder:');
